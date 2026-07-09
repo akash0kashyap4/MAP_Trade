@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/groww/status")
 async def groww_status():
-    """Check if Groww API is connected successfully."""
+    """Check Groww API connection health."""
     return check_api_connection()
 
 
@@ -179,13 +179,13 @@ async def demo_seed():
 
 @router.get("/groww/health")
 async def groww_health():
-    """Ping Groww API and send Telegram alert with status."""
-    status = check_api_connection()
-    if status.get("status") == "connected":
-        send_telegram(f"Good morning. Ragi is ready. Groww API: Connected")
+    """Ping Groww API and return connection status."""
+    result = check_api_connection()
+    if result["ok"]:
+        send_telegram("[Ragi] Groww API health check OK.")
     else:
-        send_telegram(f"WARNING: Groww API connection failed! Check GROWW_API_KEY. Error: {status.get('message')}")
-    return status
+        send_telegram(f"[Ragi] Groww API health check FAILED: {result['message']}")
+    return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
 
