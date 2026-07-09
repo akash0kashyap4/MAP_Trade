@@ -529,3 +529,52 @@ async def _run_learning_sync():
     learner = Learner(agent, db)
     await learner.run_nightly_review()
     print("[routes] On-demand learning complete.")
+
+
+# ── TRADING MODE TOGGLE ───────────────────────────────────────────────────────
+
+class ModeRequest(BaseModel):
+    mode: str  # "paper" | "live"
+
+
+@router.get("/trading/mode")
+async def get_trading_mode():
+    """Return current trading mode."""
+    import config
+    return {"mode": "paper" if config.TRADING["paper_trade"] else "live"}
+
+
+@router.post("/trading/set-mode")
+async def set_trading_mode(req: ModeRequest):
+    """
+    Switch trading mode at runtime without restarting the bot.
+    Switching to 'live' requires AngelOne credentials in env.
+    """
+    import config
+
+    if req.mode not in ("paper", "live"):
+        raise HTTPException(status_code=400, detail="mode must be 'paper' or 'live'")
+
+    if req.mode == "live":
+        # Validate AngelOne credentials are configured
+        missing = [k for k in ("ANGEL_API_KEY", "ANGEL_CLIENT_ID", "ANGEL_PASSWORD", "ANGEL_TOTP_SECRET")
+                   if not config.__dict__.get(k) and not __import__("os").getenv(k, "").strip()]
+        if missing:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": f"Missing env vars: {', '.join(missing)}"}
+            )
+        # Test AngelOne login
+        try:
+            from angelone.auth import get_angel_client
+            get_angel_client()
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": f"AngelOne login failed: {e}"}
+            )
+
+    config.TRADING["paper_trade"] = (req.mode == "paper")
+    print(f"[routes] Trading mode changed → {req.mode.upper()}")
+    await send_telegram(f"⚙️ Trading mode changed to: {req.mode.upper()}")
+    return {"ok": True, "mode": req.mode}
