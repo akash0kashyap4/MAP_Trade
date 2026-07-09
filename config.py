@@ -12,6 +12,13 @@ TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 GROWW_API_KEY      = os.getenv("GROWW_API_KEY", "")
 GROWW_SECRET_KEY   = os.getenv("GROWW_SECRET_KEY", "")
 
+# AngelOne SmartAPI (live trading)
+ANGEL_API_KEY      = os.getenv("ANGEL_API_KEY", "")
+ANGEL_CLIENT_ID    = os.getenv("ANGEL_CLIENT_ID", "")
+ANGEL_PASSWORD     = os.getenv("ANGEL_PASSWORD", "")
+ANGEL_TOTP_SECRET  = os.getenv("ANGEL_TOTP_SECRET", "")
+
+
 ATM_STEP    = 50
 SENSEX_STEP = 100
 
@@ -27,9 +34,9 @@ INITIAL_CAPITAL = 100_000   # ₹1 lakh dummy capital
 
 TRADING = {
     "lots":            1,
-    "paper_trade":     True,
-    "max_positions":   999,
-    "max_daily_loss":  5000,   # hard safety brake only — AI decides everything else
+    "paper_trade":     True,   # False = live trading via AngelOne
+    "max_positions":   2,      # max concurrent live positions (safety)
+    "max_daily_loss":  5000,   # hard safety brake — blocks new orders when hit
     # Fallback SL/TP used ONLY if AI omits sl_premium / target_premium.
     "fallback_sl_pct":     0.30,   # 30% below entry
     "fallback_target_pct": 0.60,   # 60% above entry

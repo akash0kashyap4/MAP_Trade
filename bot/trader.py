@@ -19,6 +19,9 @@ except Exception:
     _YF_SESSION = None
 
 from config import TRADING, INSTRUMENTS, LOT_SIZES, INITIAL_CAPITAL
+from bot.order_executor import OrderExecutor
+
+_executor = OrderExecutor()  # one instance for the session
 from data.store import store
 from data import database as db
 from bot.risk import calc_quantity, calc_sl_price, calc_target_price, calc_trailing_sl, max_positions_reached
@@ -481,35 +484,49 @@ class LiveTrader:
                     print(line)
                 await _send_telegram(f"{instrument} {action} {atm_strike}{option_type} @ Rs {entry_price:.0f}\nConf={decision.get('confidence')}/10\nWhy: {decision.get('entry_trigger','')}")
             else:
-                # REAL TRADING EXECUTION VIA GROWW
-                try:
-                    from groww.orders import place_market_order
-                    groww_symbol = opt_key # Note: Groww may expect a different symbol format
-                    order_id = place_market_order(groww_symbol, quantity, "BUY")
-                    
-                    position = {
+                # LIVE TRADING — AngelOne SmartAPI
+                # expiry must be in "09JAN25" format for AngelOne scrip master
+                angel_expiry = datetime.strptime(expiry, "%Y-%m-%d").strftime("%d%b%y").upper()
+                position = await _executor.enter(
+                    instrument=instrument,
+                    strike=atm_strike,
+                    option_type=option_type,
+                    expiry_str=angel_expiry,
+                    quantity=quantity,
+                    entry_price=entry_price,
+                    sl=sl,
+                    target=target,
+                    store=store,
+                    telegram_fn=_send_telegram,
+                )
+                if position is not None:
+                    position["signal_id"]      = signal_id
+                    position["instrument_key"] = opt_key
+                    position["entry_log"]      = log.to_dict()
+                    trade_db_id = await db.insert_trade({
+                        "trade_type":     "live",
                         "instrument":     instrument,
-                        "strike":         atm_strike,
-                        "type":           option_type,
                         "action":         action,
+                        "strike":         atm_strike,
                         "expiry":         expiry,
-                        "entry":          entry_price,
-                        "ltp":            entry_price,
-                        "pnl":            0.0,
-                        "sl":             sl,
-                        "target":         target,
+                        "entry_time":     position["entry_time"],
+                        "entry_price":    position["entry"],
                         "quantity":       quantity,
-                        "entry_time":     entry_time,
+                        "pnl_raw":        None,
+                        "pnl_final":      None,
                         "signal_id":      signal_id,
-                        "instrument_key": opt_key,
-                        "order_id":       order_id,
-                    }
+                        "confidence":     decision.get("confidence"),
+                        "entry_reason":   decision.get("reasoning", ""),
+                        "capital_used":   position["entry"] * quantity,
+                        "capital_before": round(store.capital_available, 2),
+                    })
+                    position["trade_db_id"] = trade_db_id
                     store.add_position(position)
-                    log.finalize("ENTERED_REAL", f"{action} {atm_strike}{option_type} @ {entry_price:.2f}",
-                                 sl=sl, target=target, order_id=order_id)
-                    print(f"[trader] REAL {action} {atm_strike}{option_type} @ {entry_price:.2f} | SL={sl:.2f} TGT={target:.2f}")
-                except Exception as e:
-                    print(f"[trader] Failed to place REAL order via Groww: {e}")
+                    request_option_subscribe(opt_key)
+                    self._recent_entries.append({"instrument": instrument, "direction": option_type, "time": datetime.now(IST)})
+                    log.finalize("ENTERED_LIVE", f"{action} {atm_strike}{option_type} @ {position['entry']:.2f}",
+                                 trade_db_id=trade_db_id, sl=sl, target=target, order_id=position.get("order_id"))
+                    print(f"[trader] LIVE {action} {atm_strike}{option_type} @ {position['entry']:.2f} | SL={sl:.2f} TGT={target:.2f}")
             # AI returned NO_TRADE / HOLD - record the decision trail anyway so we can review later
             log.finalize("NO_TRADE", decision.get("reasoning", "")[:120])
             for line in log.summary_lines():
@@ -524,9 +541,19 @@ class LiveTrader:
         if current_price is None:
             current_price = position.get("ltp", position["entry"])
 
+        # Live position: place real exit order via AngelOne
+        if position.get("is_live") and not TRADING["paper_trade"]:
+            fill_price = await _executor.exit(
+                position=position,
+                reason=reason,
+                current_price=current_price,
+                telegram_fn=_send_telegram,
+            )
+            current_price = fill_price
+
         # Realistic exit: receive the bid (apply slippage), then charge full fee stack
         exit_quote = current_price
-        exit_fill  = apply_slippage(current_price, "sell")
+        exit_fill  = apply_slippage(current_price, "sell") if not position.get("is_live") else current_price
         breakdown  = realistic_pnl(position["entry"], exit_fill, position["quantity"])
         pnl_raw    = breakdown["pnl_raw"]
         pnl_final  = breakdown["pnl_final"]
