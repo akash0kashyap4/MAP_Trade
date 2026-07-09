@@ -1,0 +1,554 @@
+from __future__ import annotations
+import asyncio
+import json
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from data import database as db
+from data.store import store
+from groww.oauth import build_login_url, exchange_code_for_token, write_token_to_env, send_telegram
+
+router = APIRouter()
+
+
+@router.get("/upstox/login-link")
+async def upstox_login_link():
+    """Return today's Upstox OAuth URL. Tap on phone to log in."""
+    return {"url": build_login_url()}
+
+
+@router.post("/_demo/seed")
+async def demo_seed():
+    """Load representative sample data into the live store for screenshots.
+    Wipes on next bot restart (store is in-memory). Behind basic auth in nginx."""
+    from datetime import datetime, timedelta
+    import pytz
+
+    IST = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(IST)
+    t = lambda mins_ago: (now - timedelta(minutes=mins_ago)).strftime("%H:%M")
+
+    store.prices["NIFTY"].ltp        = 24187.40
+    store.prices["NIFTY"].prev_close = 24052.95
+    store.prices["NIFTY"].chg        = 134.45
+    store.prices["NIFTY"].chg_pct    = 0.56
+    store.prices["BANKNIFTY"].ltp        = 58462.10
+    store.prices["BANKNIFTY"].prev_close = 58193.20
+    store.prices["BANKNIFTY"].chg        = 268.90
+    store.prices["BANKNIFTY"].chg_pct    = 0.46
+    store.prices["SENSEX"].ltp        = 77384.55
+    store.prices["SENSEX"].prev_close = 77084.94
+    store.prices["SENSEX"].chg        = 299.61
+    store.prices["SENSEX"].chg_pct    = 0.39
+
+    store.india_vix     = 13.42
+    store.ai_status     = "in_trade"
+    store.feed_status   = "live"
+    store.last_tick_time = now.strftime("%H:%M:%S")
+    store.tick_count    = 31
+    store.next_check_time = (now + timedelta(minutes=5)).strftime("%H:%M")
+    store.premarket_bias = {
+        "bias": "BULLISH", "bias_strength": 7, "risk_level": "MEDIUM",
+        "reasoning": "Positive global cues, VIX subdued at 13.4, Nifty PCR 1.32 supportive. "
+                     "Watch 24050 support, 24220 resistance.",
+    }
+    store.realized_pnl   = 687.57
+    store.cumulative_pnl = 4_212.18
+
+    store.positions = [{
+        "instrument": "NIFTY", "strike": 24200, "type": "CE", "action": "BUY_CE",
+        "expiry": "2026-07-02", "entry": 89.83, "ltp": 102.40,
+        "pnl": round((102.40 - 89.83) * 75, 2),
+        "sl": 83.16, "target": 103.16, "quantity": 75,
+        "entry_time": (now - timedelta(minutes=18)).isoformat(),
+        "trade_db_id": None, "signal_id": None,
+    }]
+
+    sample_log_buy = {
+        "instrument": "NIFTY", "time": t(18),
+        "entries": [
+            {"stage":"GUARD","step":"CandleData","status":"PASS","detail":"86 candles loaded","data":{}},
+            {"stage":"GUARD","step":"FirstCandleBlock","status":"PASS","detail":"past 15-min opening window","data":{}},
+            {"stage":"GUARD","step":"VIX","status":"PASS","detail":"VIX=13.42 <= 18.0","data":{"vix":13.42}},
+            {"stage":"GUARD","step":"LateDayCutoff","status":"PASS","detail":"before 14:20","data":{}},
+            {"stage":"GUARD","step":"ChoppyZone","status":"PASS","detail":"outside 12:40-12:55 window","data":{}},
+            {"stage":"GUARD","step":"ExpiryThetaCutoff","status":"PASS","detail":"expiry_day=False, cutoff=13:00","data":{}},
+            {"stage":"INFO","step":"ContextBuilt","status":"INFO",
+             "detail":"phase=PULLBACK trend=BULLISH vix=13.42 iv=12.5",
+             "data":{"spot":24187.4,"atm":24200,"pcr":1.32,"max_pain":24150}},
+            {"stage":"AI","step":"AI_Decision","status":"PASS",
+             "detail":"BUY_CE conf=8/10",
+             "data":{"reasoning":"15m BULLISH structure with PULLBACK phase off support; PCR 1.32 supportive; low VIX favors directional buys."}},
+            {"stage":"GUARD","step":"CorrelatedEntry","status":"PASS","detail":"no correlated entries in last 5 min","data":{}},
+            {"stage":"GUARD","step":"ATM_IV","status":"PASS","detail":"ATM IV=12.5 <= 18","data":{"atm_iv":12.5}},
+            {"stage":"GUARD","step":"OptionChain","status":"PASS","detail":"strike=24200 ltp=88.5 expiry=2026-07-02","data":{}},
+            {"stage":"INFO","step":"Slippage","status":"INFO","detail":"quoted=88.5 -> fill@ask=89.83","data":{"quoted":88.5,"fill":89.83}},
+            {"stage":"GUARD","step":"Capital","status":"PASS","detail":"cost=Rs6,738 within budget","data":{}},
+            {"stage":"EXECUTION","step":"Outcome","status":"INFO",
+             "detail":"ENTERED - BUY_CE 24200CE @ 89.83","data":{"sl":83.16,"target":103.16}},
+        ],
+        "ai": {
+            "action":"BUY_CE","confidence":8,
+            "trend_read":"15m BULLISH, 5m pullback to EMA21",
+            "entry_trigger":"pullback-to-support near 24150",
+            "reasoning":"Bullish 15m structure with PULLBACK phase off support; PCR 1.32 supportive; low VIX favors directional buys.",
+            "sl_premium":83.16,"target_premium":103.16,"risk_reward":2.0,
+        },
+        "outcome": {"result":"ENTERED","detail":"BUY_CE 24200CE @ 89.83"},
+    }
+
+    sample_log_skip_vix = {
+        "instrument": "BANKNIFTY", "time": t(22),
+        "entries": [
+            {"stage":"GUARD","step":"CandleData","status":"PASS","detail":"86 candles loaded","data":{}},
+            {"stage":"GUARD","step":"FirstCandleBlock","status":"PASS","detail":"past 15-min opening window","data":{}},
+            {"stage":"GUARD","step":"VIX","status":"BLOCK","detail":"VIX=19.10 > 18.0 - options too expensive","data":{"vix":19.1}},
+            {"stage":"EXECUTION","step":"Outcome","status":"INFO","detail":"SKIP - vix_too_high","data":{}},
+        ],
+        "ai": None,
+        "outcome": {"result":"SKIP","detail":"vix_too_high"},
+    }
+
+    sample_log_no_trade = {
+        "instrument": "SENSEX", "time": t(13),
+        "entries": [
+            {"stage":"GUARD","step":"CandleData","status":"PASS","detail":"86 candles loaded","data":{}},
+            {"stage":"GUARD","step":"FirstCandleBlock","status":"PASS","detail":"past 15-min opening window","data":{}},
+            {"stage":"GUARD","step":"VIX","status":"PASS","detail":"VIX=13.42 <= 18.0","data":{}},
+            {"stage":"GUARD","step":"LateDayCutoff","status":"PASS","detail":"before 14:20","data":{}},
+            {"stage":"GUARD","step":"ChoppyZone","status":"PASS","detail":"outside 12:40-12:55 window","data":{}},
+            {"stage":"GUARD","step":"ExpiryThetaCutoff","status":"PASS","detail":"expiry_day=False","data":{}},
+            {"stage":"AI","step":"AI_Decision","status":"INFO",
+             "detail":"NO_TRADE conf=5/10",
+             "data":{"reasoning":"Mixed signals: 15m RANGING, 5m WEAK_BULLISH, no clear BOS or sweep. Waiting for cleaner setup."}},
+            {"stage":"EXECUTION","step":"Outcome","status":"INFO",
+             "detail":"NO_TRADE - Mixed signals: 15m RANGING, 5m WEAK_BULLISH","data":{}},
+        ],
+        "ai": {
+            "action":"NO_TRADE","confidence":5,
+            "trend_read":"15m RANGING, 5m WEAK_BULLISH, no BOS",
+            "entry_trigger":None,
+            "reasoning":"Mixed signals: 15m RANGING, 5m WEAK_BULLISH, no clear BOS or sweep. Waiting for cleaner setup.",
+        },
+        "outcome": {"result":"NO_TRADE","detail":"low conviction"},
+    }
+
+    sample_log_blocked_choppy = {
+        "instrument": "NIFTY", "time": "12:45",
+        "entries": [
+            {"stage":"GUARD","step":"CandleData","status":"PASS","detail":"86 candles loaded","data":{}},
+            {"stage":"GUARD","step":"FirstCandleBlock","status":"PASS","detail":"past 15-min opening window","data":{}},
+            {"stage":"GUARD","step":"VIX","status":"PASS","detail":"VIX=13.42 <= 18.0","data":{}},
+            {"stage":"GUARD","step":"LateDayCutoff","status":"PASS","detail":"before 14:20","data":{}},
+            {"stage":"GUARD","step":"ChoppyZone","status":"BLOCK","detail":"12:40-12:55 choppy reversal zone (learned)","data":{}},
+            {"stage":"EXECUTION","step":"Outcome","status":"INFO","detail":"SKIP - choppy_window","data":{}},
+        ],
+        "ai": None,
+        "outcome": {"result":"SKIP","detail":"choppy_window"},
+    }
+
+    store.signals.clear()
+    store.add_signal({"time": t(2),  "instrument":"NIFTY",     "action":"BUY_CE",   "confidence":8,
+                      "reason":"Bullish 15m + PULLBACK off support, PCR 1.32 supportive",
+                      "decision_log": sample_log_buy})
+    store.add_signal({"time": t(7),  "instrument":"SENSEX",    "action":"NO_TRADE", "confidence":5,
+                      "reason":"Mixed signals: 15m RANGING, 5m WEAK_BULLISH",
+                      "decision_log": sample_log_no_trade})
+    store.add_signal({"time": "12:45","instrument":"NIFTY",    "action":"SKIP",     "confidence":0,
+                      "reason":"12:40-12:55 choppy reversal zone (learned)",
+                      "decision_log": sample_log_blocked_choppy})
+    store.add_signal({"time": t(22), "instrument":"BANKNIFTY", "action":"SKIP",     "confidence":0,
+                      "reason":"VIX=19.10 > 18.0 - options too expensive",
+                      "decision_log": sample_log_skip_vix})
+    store.add_signal({"time": t(27), "instrument":"NIFTY",     "action":"NO_TRADE", "confidence":6,
+                      "reason":"Approaching resistance 24220, awaiting confirmation",
+                      "decision_log": None})
+    store.add_signal({"time": "09:20","instrument":"NIFTY",    "action":"SKIP",     "confidence":0,
+                      "reason":"First 15-min window - fake moves/gap fills",
+                      "decision_log": None})
+
+    return {"ok": True, "seeded": {
+        "signals": len(store.signals),
+        "positions": len(store.positions),
+        "ai_status": store.ai_status,
+    }}
+
+
+@router.get("/upstox/callback")
+async def upstox_callback(code: str = "", state: str = "", error: str = ""):
+    """
+    Upstox redirects here with ?code=XYZ after the user logs in.
+    Exchanges code -> access_token, writes to .env, triggers bot restart.
+    """
+    from fastapi.responses import HTMLResponse
+    import subprocess
+
+    if error or not code:
+        send_telegram(f"[Ragi] Upstox auth FAILED: {error or 'no code'}")
+        return HTMLResponse(f"<h2>Auth failed</h2><p>{error or 'no code in callback'}</p>", status_code=400)
+
+    try:
+        tok = exchange_code_for_token(code)
+    except Exception as e:
+        send_telegram(f"[Ragi] Upstox token exchange failed: {e}")
+        return HTMLResponse(f"<h2>Token exchange failed</h2><p>{e}</p>", status_code=500)
+
+    access_token = tok.get("access_token", "")
+    if not access_token:
+        send_telegram(f"[Ragi] Upstox returned no access_token: {tok}")
+        return HTMLResponse("<h2>No access_token in Upstox response</h2>", status_code=500)
+
+    write_token_to_env(access_token, env_path="/opt/ragi/.env")
+
+    # Restart bot to pick up new token (sudoers grants this specific command without password)
+    try:
+        subprocess.Popen(["sudo", "/bin/systemctl", "restart", "ragi"])
+        restart_msg = "Bot restart triggered."
+    except Exception as e:
+        restart_msg = f"Restart failed: {e} -- please restart manually."
+
+    send_telegram(f"[Ragi] Upstox token refreshed.\n{restart_msg}")
+    return HTMLResponse(
+        "<h2>Token refreshed</h2>"
+        "<p>You can close this tab. Ragi will resume in ~10 seconds.</p>",
+        status_code=200,
+    )
+
+_backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
+
+
+class BacktestRequest(BaseModel):
+    instrument:          str  = "NIFTY"
+    start_date:          str  = "2025-01-01"
+    end_date:            str  = "2025-05-30"
+    use_ai:              bool = False
+    strategy:            str  = "first_candle"
+    stop_loss_rs:        Optional[float] = None
+    target_rs:           Optional[float] = None
+    lots:                Optional[int]   = None
+    max_trades_per_day:  Optional[int]   = None
+    max_daily_loss:      Optional[float] = None
+
+
+@router.get("/backtest/strategies")
+async def list_strategies():
+    from backtest.strategies import STRATEGIES
+    return STRATEGIES
+
+
+@router.get("/status")
+async def status():
+    return store.sse_payload()
+
+
+@router.get("/trades/today")
+async def trades_today():
+    return await db.get_today_trades()
+
+
+@router.get("/trades")
+async def trades(days: int = 30):
+    return await db.get_trades(days=days)
+
+
+@router.get("/rules")
+async def rules():
+    return await db.get_latest_rules()
+
+
+@router.post("/backtest/run")
+async def backtest_run(req: BacktestRequest, background_tasks: BackgroundTasks):
+    if _backtest_status["running"]:
+        raise HTTPException(status_code=409, detail="Backtest already running")
+
+    background_tasks.add_task(_run_backtest, req)
+    return {"status": "started"}
+
+
+@router.get("/backtest/status")
+async def backtest_status():
+    return _backtest_status
+
+
+def _run_backtest_sync(req: BacktestRequest):
+    """Runs in a thread — never blocks the event loop."""
+    from backtest.engine import BacktestEngine
+    config = {}
+    if req.stop_loss_rs:       config["stop_loss_rs"]       = req.stop_loss_rs
+    if req.target_rs:          config["target_rs"]          = req.target_rs
+    if req.lots:               config["lots"]               = req.lots
+    if req.max_trades_per_day: config["max_trades_per_day"] = req.max_trades_per_day
+    if req.max_daily_loss:     config["max_daily_loss"]     = req.max_daily_loss
+
+    config["strategy"] = req.strategy
+    engine = BacktestEngine(use_ai_brain=req.use_ai)
+    result = engine.run(req.instrument, req.start_date, req.end_date, config)
+    return result, config
+
+
+async def _run_backtest(req: BacktestRequest):
+    _backtest_status["running"] = True
+    _backtest_status["error"]   = None
+    _backtest_status["result"]  = None
+    _backtest_status["trades_done"] = 0
+    try:
+        loop = asyncio.get_event_loop()
+        result, config = await loop.run_in_executor(None, _run_backtest_sync, req)
+
+        stats = {
+            "total_trades":  result.total_trades,
+            "wins":          result.wins,
+            "losses":        result.losses,
+            "win_rate":      result.win_rate,
+            "total_pnl":     result.total_pnl,
+            "profit_factor": result.profit_factor,
+            "sharpe_ratio":  result.sharpe_ratio,
+            "max_drawdown":  result.max_drawdown,
+            "win_rate_by_dow":  result.win_rate_by_day_of_week,
+            "win_rate_by_hour": result.win_rate_by_hour,
+            "strategy":      result.strategy,
+            "instrument":    result.instrument,
+            "start_date":    result.start_date,
+            "end_date":      result.end_date,
+        }
+        await db.save_backtest_run({"instrument": req.instrument, **config}, stats)
+        _backtest_status["result"] = {**stats, "trades": result.trades[-30:]}
+
+    except Exception as e:
+        import traceback
+        _backtest_status["error"] = str(e)
+        print(f"[backtest] ERROR: {e}\n{traceback.format_exc()}")
+    finally:
+        _backtest_status["running"] = False
+
+
+@router.post("/tick")
+async def manual_tick(request: Request):
+    """Manually trigger one market loop tick (for testing)."""
+    trader = request.app.state.trader
+    trader._market_open = True
+    await trader.market_loop_tick()
+    return {"status": "tick done", "signals": len(store.signals)}
+
+
+@router.get("/positions")
+async def positions():
+    return store.positions
+
+
+@router.get("/pnl")
+async def pnl():
+    return store.get_daily_summary()
+
+
+# ── Self-learning data feed ───────────────────────────────────────────────────
+
+class TradeImport(BaseModel):
+    instrument:  str
+    action:      str            # BUY_CE or BUY_PE
+    entry_time:  str            # "2025-01-15T09:20:00"
+    entry_price: float
+    exit_time:   str
+    exit_price:  float
+    exit_reason: str            # SL / TARGET / EOD / manual
+    strike:      Optional[int]  = None
+    expiry:      Optional[str]  = None
+    quantity:    Optional[int]  = None
+    trade_type:  str            = "historical"
+
+
+@router.post("/trades/import")
+async def import_trades(trades: list[TradeImport]):
+    """
+    Feed historical trades for self-learning.
+    The nightly review at 9 PM will analyse these along with paper trades.
+
+    Example body:
+    [
+      {"instrument":"NIFTY","action":"BUY_CE","entry_time":"2025-01-15T09:20:00",
+       "entry_price":120.0,"exit_time":"2025-01-15T10:30:00","exit_price":180.0,
+       "exit_reason":"TARGET","strike":24000,"expiry":"2025-01-16","quantity":75}
+    ]
+    """
+    saved = 0
+    from config import LOT_SIZES
+    for t in trades:
+        qty = t.quantity or LOT_SIZES.get(t.instrument, 75)
+        pnl_raw = (t.exit_price - t.entry_price) * qty
+        brokerage = 40
+        await db.insert_trade({
+            "trade_type":  t.trade_type,
+            "instrument":  t.instrument,
+            "action":      t.action,
+            "strike":      t.strike,
+            "expiry":      t.expiry,
+            "entry_time":  t.entry_time,
+            "entry_price": t.entry_price,
+            "exit_time":   t.exit_time,
+            "exit_price":  t.exit_price,
+            "exit_reason": t.exit_reason,
+            "quantity":    qty,
+            "pnl_raw":     round(pnl_raw, 2),
+            "pnl_final":   round(pnl_raw - brokerage, 2),
+            "signal_id":   None,
+        })
+        saved += 1
+    return {"imported": saved, "message": f"{saved} trades saved. Nightly review at 21:00 will learn from them."}
+
+
+@router.post("/backtest/run-all")
+async def backtest_run_all(req: BacktestRequest, background_tasks: BackgroundTasks):
+    """Run all 5 strategies and return comparison results."""
+    if _backtest_status["running"]:
+        raise HTTPException(status_code=409, detail="Backtest already running")
+    background_tasks.add_task(_run_all_strategies, req)
+    return {"status": "started"}
+
+
+async def _run_all_strategies(req: BacktestRequest):
+    from backtest.strategies import STRATEGIES
+    _backtest_status["running"] = True
+    _backtest_status["error"]   = None
+    _backtest_status["result"]  = None
+    try:
+        loop = asyncio.get_event_loop()
+        comparison = []
+
+        # Run all 5 rule-based strategies (always without AI so comparison is fair)
+        for key, name in STRATEGIES.items():
+            result, _ = await loop.run_in_executor(None, _run_backtest_sync,
+                BacktestRequest(
+                    instrument=req.instrument, start_date=req.start_date,
+                    end_date=req.end_date, use_ai=False, strategy=key,
+                    stop_loss_rs=req.stop_loss_rs, target_rs=req.target_rs, lots=req.lots,
+                ))
+            comparison.append({
+                "strategy":      name,
+                "key":           key,
+                "is_ai":         False,
+                "total_trades":  result.total_trades,
+                "wins":          result.wins,
+                "losses":        result.losses,
+                "win_rate":      round(result.win_rate, 1),
+                "total_pnl":     round(result.total_pnl, 0),
+                "profit_factor": round(result.profit_factor, 2) if result.profit_factor != float("inf") else 999,
+                "sharpe":        result.sharpe_ratio,
+                "max_drawdown":  round(result.max_drawdown, 0),
+            })
+
+        # If AI brain requested, run it as a 6th entry for comparison
+        if req.use_ai:
+            ai_result, _ = await loop.run_in_executor(None, _run_backtest_sync,
+                BacktestRequest(
+                    instrument=req.instrument, start_date=req.start_date,
+                    end_date=req.end_date, use_ai=True, strategy="first_candle",
+                    stop_loss_rs=req.stop_loss_rs, target_rs=req.target_rs, lots=req.lots,
+                ))
+            comparison.append({
+                "strategy":      "🤖 AI Brain (Claude)",
+                "key":           "ai_brain",
+                "is_ai":         True,
+                "total_trades":  ai_result.total_trades,
+                "wins":          ai_result.wins,
+                "losses":        ai_result.losses,
+                "win_rate":      round(ai_result.win_rate, 1),
+                "total_pnl":     round(ai_result.total_pnl, 0),
+                "profit_factor": round(ai_result.profit_factor, 2) if ai_result.profit_factor != float("inf") else 999,
+                "sharpe":        ai_result.sharpe_ratio,
+                "max_drawdown":  round(ai_result.max_drawdown, 0),
+            })
+
+        # Sort by total P&L descending
+        comparison.sort(key=lambda x: x["total_pnl"], reverse=True)
+        _backtest_status["result"] = {"comparison": comparison, "mode": "all",
+                                       "instrument": req.instrument, "use_ai": req.use_ai,
+                                       "start": req.start_date, "end": req.end_date}
+    except Exception as e:
+        import traceback
+        _backtest_status["error"] = str(e)
+        print(f"[backtest-all] ERROR: {e}\n{traceback.format_exc()}")
+    finally:
+        _backtest_status["running"] = False
+
+
+# ── Historical data download ──────────────────────────────────────────────────
+
+_download_status = {"running": False, "result": None, "error": None}
+
+
+class DataDownloadRequest(BaseModel):
+    instrument: str  = "NIFTY"
+    date_from:  str  = "2025-01-01"
+    date_to:    str  = "2025-03-31"
+    type:       str  = "both"   # "spot", "options", "both"
+
+
+@router.post("/data/download")
+async def download_data(req: DataDownloadRequest, background_tasks: BackgroundTasks):
+    """
+    Download and cache historical candle data from Upstox.
+    Runs in background — poll GET /api/data/download/status for progress.
+    type: 'spot' | 'options' | 'both'
+    """
+    if _download_status["running"]:
+        raise HTTPException(status_code=409, detail="Download already running")
+    background_tasks.add_task(_run_download, req)
+    return {"status": "started", "instrument": req.instrument,
+            "date_from": req.date_from, "date_to": req.date_to, "type": req.type}
+
+
+@router.get("/data/download/status")
+async def download_status():
+    return _download_status
+
+
+@router.get("/data/cache/stats")
+async def cache_stats():
+    """Return summary of what's cached locally."""
+    from data.candle_cache import get_cache_stats
+    return get_cache_stats()
+
+
+def _run_download_sync(req: DataDownloadRequest) -> dict:
+    from groww.data_loader import download_spot_history, download_option_history
+    results = {}
+    if req.type in ("spot", "both"):
+        results["spot"] = download_spot_history(req.instrument, req.date_from, req.date_to)
+    if req.type in ("options", "both"):
+        results["options"] = download_option_history(req.instrument, req.date_from, req.date_to)
+    return results
+
+
+async def _run_download(req: DataDownloadRequest):
+    _download_status["running"] = True
+    _download_status["error"]   = None
+    _download_status["result"]  = None
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _run_download_sync, req)
+        _download_status["result"] = result
+    except Exception as e:
+        import traceback
+        _download_status["error"] = str(e)
+        print(f"[download] ERROR: {e}\n{traceback.format_exc()}")
+    finally:
+        _download_status["running"] = False
+
+
+@router.post("/learn/run-now")
+async def run_learning_now(background_tasks: BackgroundTasks):
+    """Trigger nightly self-learning immediately (don't wait for 9 PM)."""
+    background_tasks.add_task(_run_learning_sync)
+    return {"status": "learning started"}
+
+
+async def _run_learning_sync():
+    from ai.agent import TradingAgent
+    from ai.learner import Learner
+    agent   = TradingAgent()
+    learner = Learner(agent, db)
+    await learner.run_nightly_review()
+    print("[routes] On-demand learning complete.")
