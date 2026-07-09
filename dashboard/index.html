@@ -38,66 +38,139 @@
   /* ── LAYOUT ── */
   .terminal {
     display: grid;
-    grid-template-rows: 44px 1fr 100px;
+    grid-template-rows: 48px 1fr 32px;
     height: 100vh;
   }
 
   /* HEADER */
   .header {
-    background: var(--bg2);
+    background: #060610;
     border-bottom: 1px solid var(--grid);
     display: flex;
     align-items: center;
     padding: 0 16px;
-    gap: 24px;
+    gap: 16px;
   }
   .header-logo {
     font-family: var(--label);
-    font-size: 22px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--cyan);
     letter-spacing: 3px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .header-logo span { color: var(--amber); }
+  .header-logo .bolt { color: var(--amber); font-size: 18px; }
+  .header-logo span { color: var(--text); }
   .header-clock {
     font-family: var(--mono);
-    font-size: 13px;
-    color: var(--text);
+    font-size: 12px;
+    color: var(--text-dim);
     letter-spacing: 1px;
     flex: 1;
   }
+  .hdr-badge {
+    font-family: var(--label);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .hdr-badge.closed  { color: var(--red);   }
+  .hdr-badge.live    { color: var(--cyan);  }
+  .hdr-badge.waiting { color: var(--amber); border-color: var(--amber); }
+  .hdr-badge.paper   { color: var(--amber); }
+  .hdr-badge.next    { color: var(--text-dim); border-color: var(--grid); font-size: 10px; }
   .feed-dot {
-    width: 8px; height: 8px;
+    width: 7px; height: 7px;
     border-radius: 50%;
     background: var(--red);
     display: inline-block;
-    margin-right: 6px;
     animation: pulse 2s ease-in-out infinite;
   }
   .feed-dot.live   { background: var(--cyan); }
   .feed-dot.reconnecting { background: var(--amber); }
   .status-tag {
     font-family: var(--label);
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
     letter-spacing: 2px;
     padding: 3px 10px;
-    border-radius: 2px;
-    border: 1px solid var(--grid);
-    color: var(--text-dim);
+    border-radius: 3px;
+    border: 1px solid var(--amber);
+    color: var(--amber);
   }
   .status-tag.analyzing { color: var(--cyan); border-color: var(--cyan); }
   .status-tag.in_trade  { color: var(--green); border-color: var(--green); }
   .status-tag.learning  { color: var(--purple); border-color: var(--purple); }
-  .header-paper { color: var(--amber); font-family: var(--label); font-size: 11px; letter-spacing: 2px; }
+  .header-paper { color: var(--amber); font-family: var(--label); font-size: 10px; letter-spacing: 2px; }
 
-  /* MAIN GRID */
+  /* MAIN GRID with sidebar */
   .main {
     display: grid;
-    grid-template-columns: 200px 1fr 300px;
+    grid-template-columns: 180px 1fr 280px;
     gap: 0;
     overflow: hidden;
   }
+
+  /* SIDEBAR */
+  .sidebar {
+    background: #07071200;
+    border-right: 1px solid var(--grid);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .nav-section { padding: 10px 0 4px; }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 14px;
+    font-family: var(--label);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .nav-item.active { color: var(--cyan); border-left-color: var(--cyan); background: rgba(0,212,255,0.06); }
+  .nav-icon { font-size: 13px; width: 16px; text-align: center; }
+  .sidebar-divider { height: 1px; background: var(--grid); margin: 6px 0; }
+  .sidebar-section-label {
+    font-family: var(--label);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    padding: 6px 14px 3px;
+    opacity: 0.6;
+  }
+  .mw-row {
+    padding: 5px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .mw-name { font-family: var(--label); font-size: 10px; font-weight: 600; letter-spacing: 1px; color: var(--text-dim); }
+  .mw-price { font-size: 13px; font-weight: 600; color: var(--text); }
+  .mw-chg { font-size: 10px; }
+  .sidebar-body { flex:1; overflow-y:auto; }
+  .sidebar-body::-webkit-scrollbar { width:2px; }
+  .sidebar-body::-webkit-scrollbar-thumb { background: var(--grid); }
+  .sidebar-pnl { padding: 10px 14px; border-top: 1px solid var(--grid); }
+  .pnl-label { font-family:var(--label); font-size:9px; letter-spacing:3px; color:var(--text-dim); margin-bottom:3px; }
+  .cap-bar-wrap { height:3px; background:var(--grid); border-radius:2px; overflow:hidden; margin-top:4px; }
+
 
   /* PANELS */
   .panel {
@@ -411,6 +484,55 @@
   /* Bias strength bar */
   .bias-bar { height: 3px; background: var(--grid); border-radius: 1px; margin-top: 4px; }
   .bias-fill { height: 100%; border-radius: 1px; }
+
+  /* Timeframe buttons */
+  .tf-btn {
+    background: transparent;
+    border: 1px solid var(--grid);
+    color: var(--text-dim);
+    font-family: var(--label);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tf-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  .tf-btn.active { background: rgba(0,212,255,0.12); border-color: var(--cyan); color: var(--cyan); }
+
+  /* Bottom log bar */
+  .trade-log {
+    background: var(--bg2);
+    border-top: 1px solid var(--grid);
+    height: 32px;
+    overflow: hidden;
+  }
+  .log-title {
+    font-family: var(--label);
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+  .log-scroll { flex: 1; overflow-y: auto; }
+  .log-scroll::-webkit-scrollbar { height: 2px; width: 2px; }
+  .log-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .log-ts    { color: var(--text-dim); min-width: 50px; }
+  .log-inst  { color: var(--cyan); font-family: var(--label); font-weight: 600; min-width: 80px; }
+  .log-action { font-family: var(--label); font-weight: 700; min-width: 70px; }
+  .log-price { min-width: 80px; }
+  .log-pnl   { min-width: 90px; font-weight: 600; }
+  .log-reason { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -418,100 +540,106 @@
 
   <!-- HEADER -->
   <div class="header">
-    <div class="header-logo">RAGI<span>·</span>BOT</div>
+    <div class="header-logo"><span class="bolt">⚡</span> RAGI<span>·BOT</span></div>
     <div class="header-clock" id="clock">--:--:-- IST</div>
-    <div style="display:flex;align-items:center;gap:6px;">
-      <span class="feed-dot" id="feed-dot"></span>
-      <span id="feed-status" style="font-family:var(--label);font-size:10px;letter-spacing:2px;color:var(--text-dim)">CLOSED</span>
-    </div>
+    <div class="hdr-badge closed" id="mkt-badge"><span class="feed-dot" id="feed-dot"></span><span id="feed-status">CLOSED</span></div>
     <div class="status-tag" id="ai-status">WAITING</div>
-    <div class="header-paper">● PAPER MODE</div>
-    <div class="next-check">NEXT CHECK <span id="next-check">--:--</span></div>
+    <div class="hdr-badge paper">● PAPER MODE</div>
+    <div class="hdr-badge next">NEXT CHECK <span id="next-check">--:--</span></div>
   </div>
 
   <!-- MAIN BODY -->
   <div class="main">
 
-    <!-- LEFT PANEL: Prices + P&L -->
-    <div class="panel">
-      <div class="panel-title">MARKET PRICES</div>
-      <div class="panel-body">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="nav-section">
+        <div class="nav-item active" onclick="setNav(this)"><span class="nav-icon">⊞</span> Dashboard</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">📈</span> Market Data</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">📂</span> Open Positions</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">📋</span> Trade Log</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">🔬</span> Backtest</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">📊</span> Reports</div>
+        <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">⚙</span> Settings</div>
+      </div>
 
-        <div class="instrument-card" id="card-NIFTY">
-          <div class="inst-name">NIFTY 50</div>
-          <div class="inst-ltp" id="ltp-NIFTY">──────</div>
-          <div class="inst-chg" id="chg-NIFTY" style="color:var(--text-dim)">──</div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">MARKET WATCH</div>
+
+      <div class="mw-row">
+        <div>
+          <div class="mw-name">NIFTY 50</div>
+          <div class="mw-price" id="ltp-NIFTY">──────</div>
+          <div class="mw-chg" id="chg-NIFTY" style="color:var(--text-dim)">──</div>
         </div>
-
-        <div class="instrument-card" id="card-BANKNIFTY">
-          <div class="inst-name">BANK NIFTY</div>
-          <div class="inst-ltp" id="ltp-BANKNIFTY">──────</div>
-          <div class="inst-chg" id="chg-BANKNIFTY" style="color:var(--text-dim)">──</div>
+      </div>
+      <div class="mw-row">
+        <div>
+          <div class="mw-name">BANK NIFTY</div>
+          <div class="mw-price" id="ltp-BANKNIFTY">──────</div>
+          <div class="mw-chg" id="chg-BANKNIFTY" style="color:var(--text-dim)">──</div>
         </div>
-
-        <div class="instrument-card" id="card-SENSEX">
-          <div class="inst-name">SENSEX</div>
-          <div class="inst-ltp" id="ltp-SENSEX">──────</div>
-          <div class="inst-chg" id="chg-SENSEX" style="color:var(--text-dim)">──</div>
+      </div>
+      <div class="mw-row">
+        <div>
+          <div class="mw-name">SENSEX</div>
+          <div class="mw-price" id="ltp-SENSEX">──────</div>
+          <div class="mw-chg" id="chg-SENSEX" style="color:var(--text-dim)">──</div>
         </div>
+      </div>
 
-        <div class="divider"></div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">TODAY P&amp;L</div>
+      <div style="padding:4px 14px 10px">
+        <div class="pnl-total" id="pnl-total" style="font-size:24px">₹0</div>
+        <div class="pnl-row"><span>Realized</span><span id="pnl-realized" style="color:var(--text)">₹0</span></div>
+        <div class="pnl-row"><span>Unrealized</span><span id="pnl-unrealized" style="color:var(--text)">₹0</span></div>
+      </div>
 
-        <div class="section-label">TODAY P&amp;L</div>
-        <div class="pnl-block">
-          <div class="pnl-total" id="pnl-total">₹0</div>
-          <div class="pnl-row">
-            <span>Realized</span><span id="pnl-realized" style="color:var(--text)">₹0</span>
-          </div>
-          <div class="pnl-row">
-            <span>Unrealized</span><span id="pnl-unrealized" style="color:var(--text)">₹0</span>
-          </div>
-        </div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">CAPITAL</div>
+      <div style="padding:4px 14px 6px;font-size:10px;color:var(--text-dim)">
+        <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>Current</span><span id="cap-current" style="color:var(--text)">₹1,00,000</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>Available</span><span id="cap-available" style="color:var(--green)">₹1,00,000</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Locked</span><span id="cap-locked" style="color:var(--amber)">₹0</span></div>
+        <div class="cap-bar-wrap"><div id="cap-bar" style="height:100%;width:0%;background:var(--amber);border-radius:2px;transition:width 0.5s"></div></div>
+        <div style="font-size:9px;text-align:right;margin-top:2px"><span id="cap-pct">0</span>% used</div>
+      </div>
 
-        <div class="divider"></div>
-
-        <div class="section-label">CAPITAL</div>
-        <div style="margin-bottom:4px">
-          <div style="font-size:10px;color:var(--text-dim);display:flex;justify-content:space-between;margin-bottom:2px">
-            <span>Current</span><span id="cap-current" style="color:var(--text)">₹1,00,000</span>
-          </div>
-          <div style="font-size:10px;color:var(--text-dim);display:flex;justify-content:space-between;margin-bottom:2px">
-            <span>Available</span><span id="cap-available" style="color:var(--green)">₹1,00,000</span>
-          </div>
-          <div style="font-size:10px;color:var(--text-dim);display:flex;justify-content:space-between;margin-bottom:4px">
-            <span>Locked</span><span id="cap-locked" style="color:var(--amber)">₹0</span>
-          </div>
-          <div style="height:4px;background:var(--grid);border-radius:2px;overflow:hidden">
-            <div id="cap-bar" style="height:100%;width:0%;background:var(--amber);border-radius:2px;transition:width 0.5s"></div>
-          </div>
-          <div style="font-size:9px;color:var(--text-dim);margin-top:2px;text-align:right"><span id="cap-pct">0</span>% used</div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section-label">OPEN POSITIONS</div>
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-section-label">OPEN POSITIONS</div>
+      <div style="padding:4px 14px">
         <div class="pos-count" id="pos-count">0</div>
-
       </div>
     </div>
 
-    <!-- CENTER PANEL: Candles + Indicators + Positions + Backtest -->
+    <!-- CENTER PANEL -->
     <div class="center-panel">
-      <div class="panel-title">MARKET DATA & ANALYSIS</div>
+      <div class="panel-title">MARKET DATA &amp; ANALYSIS</div>
       <div class="center-scroll">
 
-        <!-- Candle Table -->
-        <div class="section-label" style="margin-bottom:6px">5-MIN CANDLES — NIFTY</div>
-        <table class="candle-table" id="candle-table">
-          <thead>
-            <tr>
-              <th>TIME</th><th>OPEN</th><th>HIGH</th><th>LOW</th><th>CLOSE</th><th>VOL</th>
-            </tr>
-          </thead>
-          <tbody id="candle-tbody">
-            <tr><td colspan="6" style="color:var(--text-dim);text-align:center;padding:10px">waiting for data…</td></tr>
-          </tbody>
-        </table>
+        <!-- Chart Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div>
+            <span style="font-family:var(--label);font-size:13px;font-weight:700;color:var(--text)">NIFTY 50</span>
+            <span style="font-size:10px;color:var(--text-dim);margin-left:6px">· 5m</span>
+            <span style="font-size:12px;color:var(--green);margin-left:10px" id="chart-price">--</span>
+            <span style="font-size:10px;color:var(--green);margin-left:4px" id="chart-chg">--</span>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="tf-btn" onclick="setTF('1m',this)">1m</button>
+            <button class="tf-btn active" onclick="setTF('5m',this)">5m</button>
+            <button class="tf-btn" onclick="setTF('15m',this)">15m</button>
+            <button class="tf-btn" onclick="setTF('1h',this)">1h</button>
+            <button class="tf-btn" onclick="setTF('1D',this)">1D</button>
+          </div>
+        </div>
+
+        <!-- Candlestick Chart -->
+        <div id="chart-container" style="width:100%;height:200px;background:var(--bg2);border:1px solid var(--grid);border-radius:3px;margin-bottom:8px;position:relative">
+          <div id="chart-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">waiting for data…</div>
+          <canvas id="chart-canvas" style="display:none;width:100%;height:100%"></canvas>
+        </div>
 
         <div class="divider"></div>
 
@@ -672,15 +800,18 @@
     </div>
   </div>
 
-  <!-- BOTTOM TRADE LOG -->
+  <!-- BOTTOM LOG BAR -->
   <div class="trade-log">
-    <div class="log-title">LIVE TRADE LOG</div>
-    <div class="log-scroll" id="trade-log-scroll">
-      <div class="log-entry" style="color:var(--text-dim)">
-        <span class="log-ts">──:──</span>
-        <span class="log-inst">WAITING</span>
-        <span>System initialized. Connecting to market feed…</span>
+    <div style="display:flex;align-items:center;gap:0;height:100%">
+      <div class="log-title" style="padding:0 12px;border-right:1px solid var(--grid);white-space:nowrap">LIVE TRADE LOG</div>
+      <div class="log-scroll" id="trade-log-scroll" style="display:flex;align-items:center;gap:0;overflow-x:auto;overflow-y:hidden;flex:1;white-space:nowrap;padding:0 12px">
+        <div class="log-entry">
+          <span class="log-ts">──:──</span>
+          <span class="log-inst" style="color:var(--amber)">WAITING</span>
+          <span>System initialized. Connecting to market feed…</span>
+        </div>
       </div>
+      <div style="padding:0 12px;border-left:1px solid var(--grid);font-family:var(--label);font-size:9px;color:var(--text-dim);letter-spacing:1px">Connection <span id="conn-status" style="color:var(--red)">&#9679;</span></div>
     </div>
   </div>
 
@@ -1358,6 +1489,15 @@ function renderBacktestResult(r) {
         <tbody>${rows}</tbody>
       </table>`;
   }
+}
+// ── NAV & TIMEFRAME ──
+function setNav(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+}
+function setTF(tf, el) {
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
 }
 </script>
 </body>
