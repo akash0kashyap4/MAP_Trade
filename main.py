@@ -27,8 +27,8 @@ from data.store import store
 from ai.agent import TradingAgent
 from ai.learner import Learner
 from bot.trader import LiveTrader
-from api.routes import router
-from api.sse import sse_endpoint
+from routers.routes import router as api_router
+from routers.sse import sse_endpoint
 from scheduler import setup_scheduler
 from groww.live_feed import start_feed
 
