@@ -1,0 +1,17 @@
+[Unit]
+Description=Ragi Trading Bot (Gunicorn/Uvicorn)
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/root/Ragi_bot
+Environment="PATH=/root/Ragi_bot/venv/bin"
+ExecStart=/root/Ragi_bot/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+
+# Auto-restart on crash
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
