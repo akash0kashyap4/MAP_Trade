@@ -2,9 +2,16 @@ from __future__ import annotations
 import json
 import asyncpg
 import os
+import socket
 from datetime import datetime
 import pytz
 from typing import Optional
+
+# Force IPv4 for Vercel (which does not support IPv6 outbound connections)
+_orig_getaddrinfo = socket.getaddrinfo
+def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+socket.getaddrinfo = _ipv4_getaddrinfo
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -86,18 +93,28 @@ async def get_pool():
     global _pool
     if _pool is None:
         if not DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is not set. Please set it in .env for Supabase.")
-        _pool = await asyncpg.create_pool(DATABASE_URL, statement_cache_size=0)
+            raise ValueError("DATABASE_URL environment variable is not set.")
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            statement_cache_size=0,
+            min_size=1,
+            max_size=5,
+            command_timeout=30,
+        )
     return _pool
 
 async def init_db():
-    pool = await get_pool()
-    async with pool.acquire() as db:
-        for statement in CREATE_TABLES.strip().split(";"):
-            s = statement.strip()
-            if s:
-                await db.execute(s)
-    print(f"[DB] Initialized Postgres DB")
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as db:
+            for statement in CREATE_TABLES.strip().split(";"):
+                s = statement.strip()
+                if s:
+                    await db.execute(s)
+        print(f"[DB] Initialized Postgres DB")
+    except Exception as e:
+        print(f"[DB] WARNING: Could not connect to database: {e}")
+        print(f"[DB] App will continue without DB — check DATABASE_URL env var.")
 
 def _now_ist() -> str:
     return datetime.now(pytz.timezone("Asia/Kolkata")).isoformat()

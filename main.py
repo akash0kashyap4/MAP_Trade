@@ -38,10 +38,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("[main] DB initialized")
 
-    from data.database import get_today_realized_pnl, get_total_realized_pnl
-    store.cumulative_pnl = await get_total_realized_pnl()
-    store.realized_pnl   = await get_today_realized_pnl()
-    print(f"[main] Cumulative P&L: ₹{store.cumulative_pnl:,.2f} | Today: ₹{store.realized_pnl:,.2f}")
+    try:
+        from data.database import get_today_realized_pnl, get_total_realized_pnl
+        store.cumulative_pnl = await get_total_realized_pnl()
+        store.realized_pnl   = await get_today_realized_pnl()
+        print(f"[main] Cumulative P&L: ₹{store.cumulative_pnl:,.2f} | Today: ₹{store.realized_pnl:,.2f}")
+    except Exception as e:
+        print(f"[main] WARNING: Could not load P&L from DB: {e}")
 
     agent   = TradingAgent()
     trader  = LiveTrader(agent)
