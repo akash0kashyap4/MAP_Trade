@@ -16,11 +16,16 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import asyncio
 from contextlib import asynccontextmanager
+import hashlib
+import hmac
+import secrets
+from datetime import timedelta
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from data.database import init_db
 from data.store import store
@@ -32,6 +37,28 @@ from routers.sse import sse_endpoint
 from scheduler import setup_scheduler
 from groww.live_feed import start_feed
 
+
+# ─── Auth config ────────────────────────────────────────────────────────────
+BOT_USERNAME = os.getenv("BOT_USERNAME", "Panda001")
+BOT_PASSWORD = os.getenv("BOT_PASSWORD", "@Defender@987@")
+SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
+# In-memory session store (token -> True). Fine for single-user.
+_sessions: dict[str, bool] = {}
+
+def _make_token() -> str:
+    return secrets.token_urlsafe(48)
+
+def _check_session(request: Request) -> bool:
+    token = request.cookies.get("ragi_session")
+    return bool(token and _sessions.get(token))
+
+def require_auth(request: Request):
+    if not _check_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -104,8 +131,39 @@ async def stream(request: Request):
     return sse_endpoint(request)
 
 
+# ─── Auth routes ─────────────────────────────────────────────────────────────
+@app.post("/api/login")
+async def api_login(body: LoginBody, response: JSONResponse = None):
+    if body.username == BOT_USERNAME and body.password == BOT_PASSWORD:
+        token = _make_token()
+        _sessions[token] = True
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(
+            "ragi_session", token,
+            httponly=True, secure=True, samesite="lax",
+            max_age=60 * 60 * 24 * 7  # 7 days
+        )
+        return resp
+    raise HTTPException(status_code=401, detail="ACCESS DENIED — Invalid credentials")
+
+@app.get("/api/logout")
+async def api_logout(request: Request):
+    token = request.cookies.get("ragi_session")
+    if token:
+        _sessions.pop(token, None)
+    resp = RedirectResponse("/")
+    resp.delete_cookie("ragi_session")
+    return resp
+
+# ─── Pages ───────────────────────────────────────────────────────────────────
 @app.get("/")
-async def dashboard():
+async def login_page():
+    return FileResponse(BASE_DIR / "dashboard" / "login.html")
+
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    if not _check_session(request):
+        return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index.html")
 
 

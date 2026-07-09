@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAGI·BOT — Login</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Share Tech Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* Animated grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(rgba(0,255,200,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,200,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      animation: gridMove 20s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes gridMove {
+      0%   { background-position: 0 0; }
+      100% { background-position: 40px 40px; }
+    }
+
+    /* Glow orb */
+    body::after {
+      content: '';
+      position: fixed;
+      width: 600px; height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,212,255,.08) 0%, transparent 70%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      background: rgba(5, 10, 20, 0.85);
+      border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 12px;
+      padding: 48px 44px 40px;
+      width: 400px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 0 60px rgba(0,212,255,.1), 0 0 120px rgba(0,212,255,.04);
+      animation: cardIn .5s ease both;
+    }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scan line animation on card */
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      background: linear-gradient(transparent 0%, rgba(0,212,255,.03) 50%, transparent 100%);
+      background-size: 100% 8px;
+      animation: scan 3s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes scan {
+      0%   { background-position: 0 -100%; }
+      100% { background-position: 0 100%; }
+    }
+
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 4px;
+      color: #00d4ff;
+      text-align: center;
+      margin-bottom: 6px;
+      text-shadow: 0 0 20px rgba(0,212,255,.6);
+    }
+    .logo span { color: #00ffcc; }
+
+    .subtitle {
+      color: rgba(0,212,255,.5);
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-align: center;
+      margin-bottom: 36px;
+      text-transform: uppercase;
+    }
+
+    label {
+      display: block;
+      color: rgba(0,212,255,.6);
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      background: rgba(0,212,255,.05);
+      border: 1px solid rgba(0,212,255,.2);
+      border-radius: 6px;
+      color: #00ffcc;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 15px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color .25s, box-shadow .25s;
+      margin-bottom: 20px;
+    }
+    input:focus {
+      border-color: rgba(0,212,255,.7);
+      box-shadow: 0 0 16px rgba(0,212,255,.15);
+    }
+    input::placeholder { color: rgba(0,212,255,.2); }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 4px;
+      background: linear-gradient(135deg, #00d4ff, #00ffcc);
+      border: none;
+      border-radius: 6px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: #000;
+      cursor: pointer;
+      transition: opacity .2s, box-shadow .2s, transform .1s;
+      box-shadow: 0 0 24px rgba(0,212,255,.4);
+    }
+    button:hover { opacity: .9; box-shadow: 0 0 36px rgba(0,212,255,.6); }
+    button:active { transform: scale(.98); }
+
+    .error {
+      color: #ff4444;
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-align: center;
+      margin-top: 16px;
+      min-height: 18px;
+      animation: shake .3s ease;
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25%      { transform: translateX(-6px); }
+      75%      { transform: translateX(6px); }
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid rgba(0,212,255,.1);
+      margin: 28px 0 20px;
+    }
+    .footer {
+      color: rgba(0,212,255,.25);
+      font-size: 10px;
+      text-align: center;
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">RAGI<span>·BOT</span></div>
+    <div class="subtitle">Secure Access Portal</div>
+
+    <form id="loginForm" onsubmit="doLogin(event)">
+      <label for="uid">User ID</label>
+      <input id="uid" type="text" placeholder="Enter user ID" autocomplete="username" required />
+
+      <label for="pwd">Password</label>
+      <input id="pwd" type="password" placeholder="Enter password" autocomplete="current-password" required />
+
+      <button type="submit">ACCESS DASHBOARD</button>
+      <div class="error" id="errMsg"></div>
+    </form>
+
+    <hr class="divider">
+    <div class="footer">AUTHORIZED PERSONNEL ONLY</div>
+  </div>
+
+  <script>
+    async function doLogin(e) {
+      e.preventDefault();
+      const uid = document.getElementById('uid').value.trim();
+      const pwd = document.getElementById('pwd').value;
+      const errEl = document.getElementById('errMsg');
+      errEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: uid, password: pwd }),
+          credentials: 'include'
+        });
+        if (res.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          const data = await res.json().catch(() => ({}));
+          errEl.textContent = data.detail || 'ACCESS DENIED — Invalid credentials';
+        }
+      } catch {
+        errEl.textContent = 'CONNECTION ERROR — Try again';
+      }
+    }
+  </script>
+</body>
+</html>
