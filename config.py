@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-UPSTOX_TOKEN      = os.getenv("UPSTOX_TOKEN", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -13,7 +12,6 @@ TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 GROWW_API_KEY      = os.getenv("GROWW_API_KEY", "")
 GROWW_SECRET_KEY   = os.getenv("GROWW_SECRET_KEY", "")
 
-BASE_URL    = "https://api.upstox.com/v2"
 ATM_STEP    = 50
 SENSEX_STEP = 100
 
