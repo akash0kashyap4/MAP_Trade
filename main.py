@@ -93,7 +93,7 @@ class _DBProxy:
 
 app = FastAPI(title="Ragi Trading Bot", lifespan=lifespan)
 
-app.include_router(router, prefix="/api")
+app.include_router(api_router, prefix="/api")
 
 
 @app.get("/stream")
