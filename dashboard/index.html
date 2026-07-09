@@ -618,6 +618,9 @@
       <div class="panel-title">MARKET DATA &amp; ANALYSIS</div>
       <div class="center-scroll">
 
+        <!-- SECTION: Market Data -->
+        <div id="sec-market" class="nav-section-panel">
+
         <!-- Chart Header -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <div>
@@ -662,7 +665,10 @@
         </div>
 
         <div class="divider"></div>
+        </div><!-- /sec-market -->
 
+        <!-- SECTION: Open Positions -->
+        <div id="sec-positions" class="nav-section-panel" style="display:none">
         <!-- Positions -->
         <div class="section-label" style="margin-bottom:6px">OPEN POSITIONS</div>
         <table class="pos-table" id="pos-table">
@@ -678,7 +684,10 @@
         </table>
 
         <div class="divider"></div>
+        </div><!-- /sec-positions -->
 
+        <!-- SECTION: Trade Log -->
+        <div id="sec-trades" class="nav-section-panel" style="display:none">
         <!-- Today's Trades from DB -->
         <div class="section-label" style="margin-bottom:6px">TODAY'S TRADES</div>
         <table class="pos-table" id="today-trades-table">
@@ -698,7 +707,10 @@
         </div>
 
         <div class="divider"></div>
+        </div><!-- /sec-trades -->
 
+        <!-- SECTION: Backtest -->
+        <div id="sec-backtest" class="nav-section-panel" style="display:none">
         <!-- Backtest Controls -->
         <div class="section-label" style="margin-bottom:6px">BACKTEST</div>
         <div class="bt-row">
@@ -735,6 +747,18 @@
         </div>
 
         <div style="height:20px"></div>
+        </div><!-- /sec-backtest -->
+
+        <!-- SECTION: Reports placeholder -->
+        <div id="sec-reports" class="nav-section-panel" style="display:none">
+          <div style="color:var(--text-dim);font-size:11px;padding:20px 0">Reports coming soon.</div>
+        </div><!-- /sec-reports -->
+
+        <!-- SECTION: Settings placeholder -->
+        <div id="sec-settings" class="nav-section-panel" style="display:none">
+          <div style="color:var(--text-dim);font-size:11px;padding:20px 0">Settings coming soon.</div>
+        </div><!-- /sec-settings -->
+
       </div>
     </div>
 
@@ -1108,9 +1132,11 @@ function addTradeLog(entry) {
 // ── TODAY'S TRADES FROM DB ──
 async function loadTodayTrades() {
   try {
-    const trades = await (await fetch('/api/trades/today')).json();
+    const raw = await (await fetch('/api/trades/today')).json();
+    const trades = Array.isArray(raw) ? raw : (raw.trades || []);
     const tbody = document.getElementById('today-trades-tbody');
 
+    if (raw.error) console.warn('[trades/today] DB error:', raw.error);
     if (!trades || !trades.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:8px">no trades today</td></tr>';
       return;
@@ -1491,10 +1517,41 @@ function renderBacktestResult(r) {
   }
 }
 // ── NAV & TIMEFRAME ──
+const NAV_SECTIONS = {
+  'Dashboard':       ['sec-market','sec-positions','sec-trades','sec-backtest'],
+  'Market Data':     ['sec-market'],
+  'Open Positions':  ['sec-positions'],
+  'Trade Log':       ['sec-trades'],
+  'Backtest':        ['sec-backtest'],
+  'Reports':         ['sec-reports'],
+  'Settings':        ['sec-settings'],
+};
+const NAV_TITLES = {
+  'Dashboard':      'MARKET DATA & ANALYSIS',
+  'Market Data':    'MARKET DATA & ANALYSIS',
+  'Open Positions': 'OPEN POSITIONS',
+  'Trade Log':      'TRADE LOG — TODAY',
+  'Backtest':       'BACKTEST ENGINE',
+  'Reports':        'REPORTS',
+  'Settings':       'SETTINGS',
+};
 function setNav(el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   el.classList.add('active');
+  const label = el.textContent.replace(el.querySelector('.nav-icon')?.textContent || '', '').trim();
+  const show = NAV_SECTIONS[label] || ['sec-market','sec-positions','sec-trades','sec-backtest'];
+  document.querySelectorAll('.nav-section-panel').forEach(p => p.style.display = 'none');
+  show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+  const titleEl = document.querySelector('.center-panel .panel-title');
+  if (titleEl && NAV_TITLES[label]) titleEl.textContent = NAV_TITLES[label];
 }
+// Initialise nav to Dashboard view (show all sections)
+(function initNav() {
+  const show = NAV_SECTIONS['Dashboard'];
+  document.querySelectorAll('.nav-section-panel').forEach(p => p.style.display = 'none');
+  show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+})();
+
 function setTF(tf, el) {
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');

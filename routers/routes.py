@@ -9,15 +9,15 @@ from pydantic import BaseModel
 
 from data import database as db
 from data.store import store
-from groww.oauth import build_login_url, exchange_code_for_token, write_token_to_env, send_telegram
+from groww.oauth import check_api_connection, send_telegram
 
 router = APIRouter()
 
 
-@router.get("/upstox/login-link")
-async def upstox_login_link():
-    """Return today's Upstox OAuth URL. Tap on phone to log in."""
-    return {"url": build_login_url()}
+@router.get("/groww/status")
+async def groww_status():
+    """Check if Groww API is connected successfully."""
+    return check_api_connection()
 
 
 @router.post("/_demo/seed")
@@ -177,45 +177,15 @@ async def demo_seed():
     }}
 
 
-@router.get("/upstox/callback")
-async def upstox_callback(code: str = "", state: str = "", error: str = ""):
-    """
-    Upstox redirects here with ?code=XYZ after the user logs in.
-    Exchanges code -> access_token, writes to .env, triggers bot restart.
-    """
-    from fastapi.responses import HTMLResponse
-    import subprocess
-
-    if error or not code:
-        send_telegram(f"[Ragi] Upstox auth FAILED: {error or 'no code'}")
-        return HTMLResponse(f"<h2>Auth failed</h2><p>{error or 'no code in callback'}</p>", status_code=400)
-
-    try:
-        tok = exchange_code_for_token(code)
-    except Exception as e:
-        send_telegram(f"[Ragi] Upstox token exchange failed: {e}")
-        return HTMLResponse(f"<h2>Token exchange failed</h2><p>{e}</p>", status_code=500)
-
-    access_token = tok.get("access_token", "")
-    if not access_token:
-        send_telegram(f"[Ragi] Upstox returned no access_token: {tok}")
-        return HTMLResponse("<h2>No access_token in Upstox response</h2>", status_code=500)
-
-    write_token_to_env(access_token, env_path="/opt/ragi/.env")
-
-    # Restart bot to pick up new token (sudoers grants this specific command without password)
-    try:
-        subprocess.Popen(["sudo", "/bin/systemctl", "restart", "ragi"])
-        restart_msg = "Bot restart triggered."
-    except Exception as e:
-        restart_msg = f"Restart failed: {e} -- please restart manually."
-
-    send_telegram(f"[Ragi] Upstox token refreshed.\n{restart_msg}")
-    return HTMLResponse(
-        "<h2>Token refreshed</h2>"
-        "<p>You can close this tab. Ragi will resume in ~10 seconds.</p>",
-        status_code=200,
-    )
+@router.get("/groww/health")
+async def groww_health():
+    """Ping Groww API and send Telegram alert with status."""
+    status = check_api_connection()
+    if status.get("status") == "connected":
+        send_telegram(f"Good morning. Ragi is ready. Groww API: Connected")
+    else:
+        send_telegram(f"WARNING: Groww API connection failed! Check GROWW_API_KEY. Error: {status.get('message')}")
+    return status
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
 
@@ -246,7 +216,14 @@ async def status():
 
 @router.get("/trades/today")
 async def trades_today():
-    return await db.get_today_trades()
+    try:
+        return await db.get_today_trades()
+    except Exception as e:
+        print(f"[trades/today] DB error: {e}")
+        return JSONResponse(
+            status_code=200,
+            content={"error": str(e), "trades": [], "note": "DB unavailable"},
+        )
 
 
 @router.get("/trades")

@@ -1,7 +1,7 @@
 # RAGI — Autonomous Options Trading Bot
 
 Self-learning paper-trading bot for NSE index options (Nifty 50, Bank Nifty, Sensex).
-Upstox v2/v3 API for market data; **Claude Sonnet 4.6** (via Claude Code CLI or the
+Groww API for market data; **Claude Sonnet 4.6** (via Claude Code CLI or the
 aerolink proxy) as the sole decision brain.
 
 > **Full AI autonomy.** There are no hard pre-AI filters (no VIX cap, no IV cap,
@@ -22,10 +22,10 @@ aerolink proxy) as the sole decision brain.
   brokerage + STT + txn + SEBI + stamp + GST so paper P&L matches a real broker.
 - **Self-Learning** — nightly at 21:00 IST Claude reviews the last 30 days of
   trades and can suggest rule adjustments (surfaced in the dashboard).
-- **Live Feed** — Upstox WS v3 for indices + option LTPs; REST fallback if WS drops.
+- **Live Feed** — Groww API for indices + option LTPs.
 - **Global Cues at 08:30** — Dow/Nasdaq/Crude/DXY/India-VIX/prev-close fetched via
   `yfinance` + `curl_cffi` browser impersonation (Yahoo blocks bare AWS IPs).
-- **Dashboard** — FastAPI + SSE at `https://ragi.rajwork.online` (Basic Auth).
+- **Dashboard** — FastAPI + SSE at `https://akash.mehakva.com` (Basic Auth).
 - **Backtest Engine** — 5 built-in strategies plus a Claude-driven mode.
 
 ---
@@ -45,23 +45,23 @@ main.py                  FastAPI app + lifespan startup
 │   ├── decision_log.py  Structured per-tick trail (guard_pass / guard_block / info)
 │   ├── risk.py          Position sizing helpers
 │   └── strategy.py      Market context builder, 5-min resampler, S/R + sweeps
-├── upstox/
-│   ├── oauth.py         Daily token refresh via Telegram-linked OAuth callback
-│   ├── live_feed.py     WS v3 feed + intraday candle refresh + option LTP loop
+├── groww/
+│   ├── oauth.py         Groww API connection check & Telegram alerts
+│   ├── live_feed.py     Groww live feed loop
 │   ├── historical.py    Candle fetch, intraday endpoint, option chain analytics
 │   ├── quotes.py        REST LTP for indices and open option positions
-│   └── auth.py          Bearer token helper
+│   └── auth.py          Groww API client helper
 ├── indicators/
 │   └── calculator.py    RSI, EMA, VWAP/TWAP, Supertrend, Bollinger, ATR
 ├── data/
 │   ├── store.py         In-memory LiveStore (prices, positions, signals)
 │   └── database.py      aiosqlite — candles, signals, trades, learning_rules
 ├── api/
-│   ├── routes.py        REST endpoints incl. /upstox/callback, /_demo/seed
+│   ├── routes.py        REST endpoints incl. /groww/health, /_demo/seed
 │   └── sse.py           Server-Sent Events for the dashboard
 ├── backtest/engine.py   Vectorised backtest engine
 ├── scripts/
-│   ├── send_login_link.py   04:00 IST cron — Telegram OAuth link
+│   ├── send_login_link.py   04:00 IST cron — Groww health check
 │   └── claude_warmup.py     06:30 IST cron — warms Claude CLI cache
 ├── scheduler.py         APScheduler — premarket 08:30, ticks, EOD 15:15, learn 21:00
 └── dashboard/index.html Single-file terminal dashboard
@@ -113,10 +113,8 @@ impersonation on AWS IPs), `pydantic>=2`, `aiosqlite`, `fastapi`, `apscheduler`,
 
 ### 2. Configure `.env`
 ```
-UPSTOX_TOKEN=eyJ...            # refreshed daily by the OAuth flow
-UPSTOX_API_KEY=...
-UPSTOX_API_SECRET=...
-UPSTOX_REDIRECT_URI=https://ragi.rajwork.online/api/upstox/callback
+GROWW_API_KEY=your_groww_api_key
+GROWW_SECRET_KEY=your_groww_secret_key
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 CLAUDE_MODEL=claude-sonnet-4-6
@@ -129,7 +127,7 @@ python main.py                # dev
 sudo systemctl restart ragi   # on EC2
 ```
 
-Dashboard: **https://ragi.rajwork.online** (Basic Auth: `raj / <password>`).
+Dashboard: **https://akash.mehakva.com** (Basic Auth: `raj / <password>`).
 
 ---
 
@@ -159,7 +157,7 @@ dashboard can render the full gate-by-gate reasoning.
 
 | Time (IST) | Job                             | Where                             |
 |------------|---------------------------------|-----------------------------------|
-| 04:00      | Telegram OAuth link             | `ragi-token-refresh.timer`        |
+| 04:00      | Groww API health check          | `ragi-token-refresh.timer`        |
 | 06:30      | Claude CLI warm-up ping         | `ragi-claude-warmup.timer`        |
 | 08:30      | Premarket analysis + Telegram   | `scheduler.py` inside `ragi.service` |
 | 09:15-15:30| 5-min market ticks              | inside `ragi.service`             |
@@ -180,8 +178,8 @@ Skipped automatically on weekends and the 16 NSE 2026 holidays.
 | POST   | `/api/learn/run-now`           | Trigger nightly learning immediately     |
 | POST   | `/api/trades/import`           | Import historical trades                 |
 | POST   | `/api/backtest/run`            | Run backtest                             |
-| GET    | `/api/upstox/login-link`       | Build Upstox OAuth URL                   |
-| GET    | `/api/upstox/callback`         | OAuth callback → writes token, restarts  |
+| GET    | `/api/groww/status`            | Check Groww API connection               |
+| GET    | `/api/groww/health`            | Ping Groww API and send Telegram alert   |
 | POST   | `/api/_demo/seed`              | Seed dashboard w/ sample data (screenshots)|
 
 ---
@@ -189,7 +187,7 @@ Skipped automatically on weekends and the 16 NSE 2026 holidays.
 ## Requirements
 
 - Python 3.11+
-- Upstox account with market-data streaming access
+- Groww account with API access
 - Claude Code CLI authenticated **OR** aerolink proxy (`ANTHROPIC_BASE_URL` +
   `ANTHROPIC_API_KEY` in `~/.claude/settings.json`)
 - On AWS: `curl_cffi` is required for yfinance to work (Yahoo blocks datacenter IPs)
@@ -200,6 +198,5 @@ Skipped automatically on weekends and the 16 NSE 2026 holidays.
 
 - `paper_trade=True` by default — no live orders. Flip in `config.py` once
   strategy is proven.
-- Upstox tokens expire daily around 03:30 IST; the Telegram-linked OAuth flow
-  handles the refresh with one fingerprint tap.
+- Ensure your Groww API keys are correct and have appropriate scopes.
 - The bot uses Claude Code CLI via subprocess — no direct `ANTHROPIC_API_KEY`.
