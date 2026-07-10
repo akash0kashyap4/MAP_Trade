@@ -8,6 +8,6 @@ def fetch_option_ltps(positions: list) -> dict:
         try:
             res = groww.get_ltp(trading_symbol=pos.get("instrument_key", "UNKNOWN"))
             ltps[key] = float(res.get("ltp", pos.get("entry", 0)))
-        except:
+        except Exception:
             ltps[key] = pos.get("entry", 0)
     return ltps

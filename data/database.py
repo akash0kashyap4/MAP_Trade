@@ -1,10 +1,13 @@
 from __future__ import annotations
 import json
+import logging
 import os
 import socket
 from datetime import datetime
 import pytz
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 # Force IPv4 (Vercel does not support IPv6 outbound)
 _orig_getaddrinfo = socket.getaddrinfo
@@ -24,6 +27,7 @@ CREATE TABLE IF NOT EXISTS candles (
     open REAL, high REAL, low REAL, close REAL, volume INTEGER, oi INTEGER,
     UNIQUE(instrument, interval, timestamp)
 );
+CREATE INDEX IF NOT EXISTS idx_candles_lookup ON candles(instrument, interval, timestamp);
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL, instrument TEXT, action TEXT, strike INTEGER,
@@ -172,18 +176,18 @@ async def init_db():
 # ── insert_candle ─────────────────────────────────────────────────────────────
 
 async def insert_candle(instrument: str, interval: str, candle: list):
-    ts, o, h, l, c, vol, oi = candle[0], candle[1], candle[2], candle[3], candle[4], candle[5], candle[6]
+    ts, o, h, low, c, vol, oi = candle[0], candle[1], candle[2], candle[3], candle[4], candle[5], candle[6]
     if _USE_SQLITE:
         try:
             async with await _sqlite_conn() as db:
                 await db.execute(
                     "INSERT OR IGNORE INTO candles (instrument,interval,timestamp,open,high,low,close,volume,oi) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (instrument, interval, str(ts), o, h, l, c, int(vol or 0), int(oi or 0))
+                    (instrument, interval, str(ts), o, h, low, c, int(vol or 0), int(oi or 0))
                 )
                 await db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[insert_candle] SQLite error: %s", e)
     else:
         try:
             pool = await _pg_pool()
@@ -191,10 +195,10 @@ async def insert_candle(instrument: str, interval: str, candle: list):
                 await db.execute(
                     "INSERT INTO candles (instrument,interval,timestamp,open,high,low,close,volume,oi) "
                     "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (instrument, interval, timestamp) DO NOTHING",
-                    instrument, interval, str(ts), o, h, l, c, int(vol or 0), int(oi or 0)
+                    instrument, interval, str(ts), o, h, low, c, int(vol or 0), int(oi or 0)
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[insert_candle] PG error: %s", e)
 
 
 # ── insert_signal ─────────────────────────────────────────────────────────────
@@ -222,7 +226,7 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
                 await db.commit()
                 return cur.lastrowid or 0
         except Exception as e:
-            print(f"[DB] insert_signal SQLite error: {e}")
+            log.warning("[insert_signal] SQLite error: %s", e)
             return 0
     else:
         try:
@@ -235,7 +239,7 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
                 )
                 return row["id"]
         except Exception as e:
-            print(f"[DB] insert_signal Postgres error: {e}")
+            log.warning("[insert_signal] PG error: %s", e)
             return 0
 
 
@@ -250,8 +254,8 @@ async def get_decision_log(signal_id: int) -> dict | None:
                     row = await cur.fetchone()
                     if row and row["decision_log"]:
                         return json.loads(row["decision_log"])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[get_decision_log] SQLite error: %s", e)
         return None
     else:
         try:
@@ -260,8 +264,8 @@ async def get_decision_log(signal_id: int) -> dict | None:
                 row = await db.fetchrow("SELECT decision_log FROM signals WHERE id=$1", signal_id)
                 if row and row["decision_log"]:
                     return json.loads(row["decision_log"])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[get_decision_log] PG error: %s", e)
         return None
 
 
@@ -287,7 +291,8 @@ async def insert_trade(trade: dict) -> int:
                 )
                 await db.commit()
                 return cur.lastrowid or 0
-        except Exception:
+        except Exception as e:
+            log.warning("[insert_trade] SQLite error: %s", e)
             return 0
     else:
         try:
@@ -301,7 +306,8 @@ async def insert_trade(trade: dict) -> int:
                     *vals
                 )
                 return row["id"]
-        except Exception:
+        except Exception as e:
+            log.warning("[insert_trade] PG error: %s", e)
             return 0
 
 
@@ -320,8 +326,8 @@ async def update_trade_exit(trade_db_id: int, exit_time: str, exit_price: float,
                      fees_total, slippage_cost, trade_db_id)
                 )
                 await db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[update_trade_exit] SQLite error: %s", e)
     else:
         try:
             pool = await _pg_pool()
@@ -332,8 +338,8 @@ async def update_trade_exit(trade_db_id: int, exit_time: str, exit_price: float,
                     exit_time, exit_price, exit_reason, pnl_raw, pnl_final,
                     fees_total, slippage_cost, trade_db_id
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[update_trade_exit] PG error: %s", e)
 
 
 # ── read helpers ──────────────────────────────────────────────────────────────
@@ -454,7 +460,8 @@ async def get_trades(days: int = 30, completed_only: bool = False) -> list:
                 ) as cur:
                     rows = await cur.fetchall()
                     return list(rows)
-        except Exception:
+        except Exception as e:
+            log.debug("[get_trades] SQLite error: %s", e)
             return []
     else:
         try:
@@ -462,10 +469,11 @@ async def get_trades(days: int = 30, completed_only: bool = False) -> list:
             async with pool.acquire() as db:
                 extra = "AND exit_time IS NOT NULL" if completed_only else ""
                 rows = await db.fetch(
-                    f"SELECT * FROM trades WHERE CAST(entry_time AS TIMESTAMP)>=NOW()-INTERVAL '{days} days' {extra} ORDER BY entry_time"
+                    f"SELECT * FROM trades WHERE CAST(entry_time AS TIMESTAMP)>=NOW()-INTERVAL '{int(days)} days' {extra} ORDER BY entry_time"
                 )
                 return [dict(r) for r in rows]
-        except Exception:
+        except Exception as e:
+            log.debug("[get_trades] PG error: %s", e)
             return []
 
 
@@ -479,8 +487,8 @@ async def get_latest_rules() -> dict:
                     row = await cur.fetchone()
                     if row and row[0]:
                         return json.loads(row[0])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[get_latest_rules] SQLite error: %s", e)
         return {}
     else:
         try:
@@ -491,8 +499,8 @@ async def get_latest_rules() -> dict:
                 )
                 if row and row["rules"]:
                     return json.loads(row["rules"])
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("[get_latest_rules] PG error: %s", e)
         return {}
 
 
@@ -505,8 +513,8 @@ async def save_learning_rules(rules: dict, stats: dict):
                     "INSERT INTO learning_rules (updated_at,rules,win_rate,sharpe,version) VALUES (?,?,?,?,?)", vals
                 )
                 await db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[save_learning_rules] SQLite error: %s", e)
     else:
         try:
             pool = await _pg_pool()
@@ -514,8 +522,8 @@ async def save_learning_rules(rules: dict, stats: dict):
                 await db.execute(
                     "INSERT INTO learning_rules (updated_at,rules,win_rate,sharpe,version) VALUES ($1,$2,$3,$4,$5)", *vals
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[save_learning_rules] PG error: %s", e)
 
 
 async def save_backtest_run(config: dict, stats: dict):
@@ -532,8 +540,8 @@ async def save_backtest_run(config: dict, stats: dict):
                     "VALUES (?,?,?,?,?,?,?,?)", vals
                 )
                 await db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[save_backtest_run] SQLite error: %s", e)
     else:
         try:
             pool = await _pg_pool()
@@ -542,8 +550,8 @@ async def save_backtest_run(config: dict, stats: dict):
                     "INSERT INTO backtest_runs (run_at,config,stats,total_trades,win_rate,profit_factor,max_drawdown,sharpe) "
                     "VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", *vals
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("[save_backtest_run] PG error: %s", e)
 
 
 async def get_signal(signal_id: int) -> dict | None:
@@ -554,7 +562,7 @@ async def get_signal(signal_id: int) -> dict | None:
                 async with db.execute("SELECT * FROM signals WHERE id=?", (signal_id,)) as cur:
                     return await cur.fetchone()
         except Exception as e:
-            print(f"[DB] get_signal error: {e}")
+            log.warning("[get_signal] SQLite error: %s", e)
             return None
     else:
         try:
@@ -563,7 +571,7 @@ async def get_signal(signal_id: int) -> dict | None:
                 row = await db.fetchrow("SELECT * FROM signals WHERE id=$1", signal_id)
                 return dict(row) if row else None
         except Exception as e:
-            print(f"[DB] get_signal error: {e}")
+            log.warning("[get_signal] PG error: %s", e)
             return None
 
 
@@ -575,7 +583,7 @@ async def get_trade(trade_id: int) -> dict | None:
                 async with db.execute("SELECT * FROM trades WHERE id=?", (trade_id,)) as cur:
                     return await cur.fetchone()
         except Exception as e:
-            print(f"[DB] get_trade error: {e}")
+            log.warning("[get_trade] SQLite error: %s", e)
             return None
     else:
         try:
@@ -584,6 +592,6 @@ async def get_trade(trade_id: int) -> dict | None:
                 row = await db.fetchrow("SELECT * FROM trades WHERE id=$1", trade_id)
                 return dict(row) if row else None
         except Exception as e:
-            print(f"[DB] get_trade error: {e}")
+            log.warning("[get_trade] PG error: %s", e)
             return None
 

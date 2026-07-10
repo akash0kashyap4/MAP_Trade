@@ -23,8 +23,8 @@ if env_path.exists():
         k, _, v = line.partition("=")
         os.environ.setdefault(k.strip(), v.strip())
 
-from groww.oauth import check_api_connection, send_telegram
-from config import is_market_day
+from groww.oauth import check_api_connection, send_telegram  # noqa: E402
+from config import is_market_day  # noqa: E402
 
 def main() -> int:
     if not is_market_day():

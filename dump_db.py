@@ -1,4 +1,6 @@
-import sqlite3, json, sys
+import sqlite3
+import json
+import sys
 
 db = sqlite3.connect('trading_bot.db')
 db.row_factory = sqlite3.Row

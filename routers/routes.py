@@ -29,7 +29,9 @@ async def demo_seed():
 
     IST = pytz.timezone("Asia/Kolkata")
     now = datetime.now(IST)
-    t = lambda mins_ago: (now - timedelta(minutes=mins_ago)).strftime("%H:%M")
+
+    def t(mins_ago):
+        return (now - timedelta(minutes=mins_ago)).strftime("%H:%M")
 
     store.prices["NIFTY"].ltp        = 24187.40
     store.prices["NIFTY"].prev_close = 24052.95
@@ -262,11 +264,16 @@ def _run_backtest_sync(req: BacktestRequest):
     """Runs in a thread — never blocks the event loop."""
     from backtest.engine import BacktestEngine
     config = {}
-    if req.stop_loss_rs:       config["stop_loss_rs"]       = req.stop_loss_rs
-    if req.target_rs:          config["target_rs"]          = req.target_rs
-    if req.lots:               config["lots"]               = req.lots
-    if req.max_trades_per_day: config["max_trades_per_day"] = req.max_trades_per_day
-    if req.max_daily_loss:     config["max_daily_loss"]     = req.max_daily_loss
+    if req.stop_loss_rs:
+        config["stop_loss_rs"] = req.stop_loss_rs
+    if req.target_rs:
+        config["target_rs"] = req.target_rs
+    if req.lots:
+        config["lots"] = req.lots
+    if req.max_trades_per_day:
+        config["max_trades_per_day"] = req.max_trades_per_day
+    if req.max_daily_loss:
+        config["max_daily_loss"] = req.max_daily_loss
 
     config["strategy"] = req.strategy
     engine = BacktestEngine(use_ai_brain=req.use_ai)
@@ -280,7 +287,7 @@ async def _run_backtest(req: BacktestRequest):
     _backtest_status["result"]  = None
     _backtest_status["trades_done"] = 0
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result, config = await loop.run_in_executor(None, _run_backtest_sync, req)
 
         stats = {
@@ -399,7 +406,7 @@ async def _run_all_strategies(req: BacktestRequest):
     _backtest_status["error"]   = None
     _backtest_status["result"]  = None
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         comparison = []
 
         # Run all 5 rule-based strategies (always without AI so comparison is fair)
@@ -512,7 +519,7 @@ async def _run_download(req: DataDownloadRequest):
     _download_status["error"]   = None
     _download_status["result"]  = None
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, _run_download_sync, req)
         _download_status["result"] = result
     except Exception as e:
@@ -584,7 +591,7 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     IST = pytz.timezone("Asia/Kolkata")
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _fetch():
             ticker = yf.Ticker(yf_sym)
@@ -620,7 +627,7 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
         return {"candles": candles, "instrument": instrument, "interval": interval}
     except Exception as e:
         print(f"[candles] error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/trading/set-mode")

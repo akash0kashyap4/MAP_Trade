@@ -22,3 +22,15 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+.env.local
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.db-shm
+*.db-wal
+logs/
+*.swp
+*.swo
+.coverage
+htmlcov/

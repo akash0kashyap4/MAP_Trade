@@ -83,12 +83,12 @@ def import_excel(xlsx_path: str):
 
             o = float(row[idx_open])
             h = float(row[idx_high])
-            l = float(row[idx_low])
+            low = float(row[idx_low])
             c = float(row[idx_close])
             v = int(row[idx_volume] or 0)
 
-            records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, l, c, v, 0))
-        except Exception as e:
+            records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, low, c, v, 0))
+        except Exception:
             skipped += 1
             continue
 
@@ -116,7 +116,8 @@ def import_excel(xlsx_path: str):
 
 def import_csv_gz(csv_gz_path: str):
     """Import from the bundled gzipped CSV (Date,Time,O,H,L,C,V)."""
-    import gzip, csv as csv_mod
+    import gzip
+    import csv as csv_mod
     print(f"Reading {csv_gz_path} …")
     records = []
     skipped = 0
@@ -128,9 +129,9 @@ def import_csv_gz(csv_gz_path: str):
             try:
                 date_val, time_val = row[0].strip(), row[1].strip()
                 ts = f"{date_val}T{time_val}+05:30"
-                o, h, l, c = float(row[2]), float(row[3]), float(row[4]), float(row[5])
+                o, h, low, c = float(row[2]), float(row[3]), float(row[4]), float(row[5])
                 v = int(float(row[6] or 0))
-                records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, l, c, v, 0))
+                records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, low, c, v, 0))
             except Exception:
                 skipped += 1
     print(f"Parsed {len(records):,} candles ({skipped} skipped)")

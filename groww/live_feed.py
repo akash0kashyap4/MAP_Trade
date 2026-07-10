@@ -75,14 +75,14 @@ async def start_feed():
 
     while True:
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             ltps = await loop.run_in_executor(None, _fetch_all_ltps)
 
             if ltps:
                 for instrument, ltp in ltps.items():
                     store.update_price(instrument, ltp)
                 store.feed_status = "live"
-                print(f"[groww.feed] Prices: " +
+                print("[groww.feed] Prices: " +
                       " | ".join(f"{k}={v:,.2f}" for k, v in ltps.items()))
 
                 # Periodically (every 6 ticks = 60 seconds) fetch candles & calculate indicators

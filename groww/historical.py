@@ -4,6 +4,7 @@ import math
 import pytz
 import yfinance as yf
 from groww.auth import get_groww_client
+from groww.pricing import bs_option_price as _bs_option_price_impl
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -128,7 +129,7 @@ def get_india_vix() -> float:
         ltp = res.get("ltp") or res.get("lastPrice") or res.get("last_price")
         if ltp:
             return float(ltp)
-    except Exception as e:
+    except Exception:
         pass
 
     # yfinance Fallback
@@ -199,29 +200,8 @@ def get_expired_option_key(instrument_key: str, expiry: str, strike: int, option
 
 def _bs_option_price(S: float, K: float, T_days: float,
                      sigma: float = 0.15, option_type: str = "CE") -> float:
-    """Black-Scholes option price — Abramowitz & Stegun normal CDF approximation."""
-    import math
-    T = max(T_days / 365.0, 1 / 365.0)
-    r = 0.065  # India risk-free rate ~6.5%
-
-    def _ncdf(x: float) -> float:
-        k = 1.0 / (1.0 + 0.2316419 * abs(x))
-        p = 0.3989422803 * math.exp(-0.5 * x * x)
-        poly = k * (0.319381530 + k * (-0.356563782 + k * (
-            1.781477937 + k * (-1.821255978 + k * 1.330274429))))
-        cdf = 1.0 - p * poly
-        return cdf if x >= 0 else 1.0 - cdf
-
-    try:
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-        d2 = d1 - sigma * math.sqrt(T)
-        if option_type == "CE":
-            price = S * _ncdf(d1) - K * math.exp(-r * T) * _ncdf(d2)
-        else:
-            price = K * math.exp(-r * T) * _ncdf(-d2) - S * _ncdf(-d1)
-        return max(round(price, 2), 0.05)
-    except Exception:
-        return 1.0
+    """Delegate to groww.pricing module (pure math, no external deps)."""
+    return _bs_option_price_impl(S, K, T_days, sigma, option_type)
 
 
 def _synthetic_option_candles_from_spot(spot_candles: list, expiry: str, strike: int,
@@ -355,7 +335,7 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
                 "oi_change":   round(atm_pe_oi - atm_ce_oi, 0),
                 "days_to_exp": days_to_exp,
             }
-    except Exception as e:
+    except Exception:
         # Expected if token lacks options subscription/permissions
         pass
 

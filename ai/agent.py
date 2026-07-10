@@ -5,10 +5,9 @@ No ANTHROPIC_API_KEY needed. Runs through your existing Claude Code session.
 from __future__ import annotations
 import asyncio
 import json
-import re
-import subprocess
-import tempfile
 import os
+import re
+import time
 from typing import Optional
 
 import pytz
@@ -25,9 +24,8 @@ from ai.schema import validate_decision, validate_premarket, validate_trailing_s
 
 IST = pytz.timezone("Asia/Kolkata")
 
-# Path to claude CLI
-CLAUDE_BIN = os.getenv("CLAUDE_BIN", r"C:\Users\MLB\.local\bin\claude.exe")
-# Model selection — defaults to Sonnet 4.6 (fast, cheap, good enough for trade decisions)
+# Model selection — Sonnet 4.6 is fast, cheap, and good enough for trade decisions.
+# Override with CLAUDE_MODEL env var to swap models without code changes.
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
@@ -65,17 +63,17 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
     """
     from anthropic import Anthropic
     from config import ANTHROPIC_API_KEY
-    
+
     if not ANTHROPIC_API_KEY:
         print("[agent] Error: ANTHROPIC_API_KEY not found in .env")
         return ""
-        
+
     client = Anthropic(api_key=ANTHROPIC_API_KEY)
-    
+
     for attempt in range(max_retries + 1):
         try:
             response = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=CLAUDE_MODEL,
                 max_tokens=4096,
                 system=system,
                 messages=[
@@ -85,7 +83,6 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
             return response.content[0].text
         except Exception as e:
             print(f"[agent] Anthropic API attempt {attempt+1} error: {e}")
-            import time
             time.sleep(2)
 
     return ""
@@ -102,8 +99,8 @@ class TradingAgent:
         self._day_context: list[str] = []   # accumulates today's decisions for context
 
     async def _ask(self, system: str, user: str) -> str:
-        """Run blocking claude CLI call in a thread so the event loop stays free."""
-        loop = asyncio.get_event_loop()
+        """Run blocking Anthropic API call in a thread so the event loop stays free."""
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _ask_claude, system, user)
 
     async def premarket_analysis(self, global_data: dict) -> dict:

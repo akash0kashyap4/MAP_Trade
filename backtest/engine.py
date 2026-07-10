@@ -149,9 +149,7 @@ class BacktestEngine:
             todays_close = float(spot_candles[-1][4])
 
             # ── Per-day state ────────────────────────────────────────────────
-            day_trades   = 0
-            day_pnl      = 0.0
-            last_entry_time = ""
+            day_pnl = 0.0
 
             if self.use_ai_brain:
                 day_result = self._run_ai_day(
