@@ -19,7 +19,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install pytest pytest-asyncio ruff numpy pandas pytz python-dotenv pydantic
+        run: pip install pytest pytest-asyncio ruff numpy pandas pytz python-dotenv pydantic requests aiohttp
 
       - name: Lint (ruff)
         run: |
