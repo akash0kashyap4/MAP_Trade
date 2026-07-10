@@ -657,6 +657,135 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+# ── CONFIG / RISK READ-OUT ───────────────────────────────────────────────────
+
+@router.get("/config/risk")
+async def get_risk_config():
+    """Return live risk parameters from config.TRADING for the dashboard settings panel."""
+    import config
+    t = config.TRADING
+    return {
+        "paper_trade":         t.get("paper_trade", True),
+        "lots":                t.get("lots", 1),
+        "max_positions":       t.get("max_positions", 2),
+        "max_daily_loss":      t.get("max_daily_loss", 5000),
+        "fallback_sl_pct":     t.get("fallback_sl_pct", 0.30),
+        "fallback_target_pct": t.get("fallback_target_pct", 0.60),
+        "trailing_sl_trigger": t.get("trailing_sl_trigger", 0.40),
+        "trailing_sl_step":    t.get("trailing_sl_step", 0.20),
+        "min_confidence":      t.get("min_confidence", 1),
+        "bot_paused":          store.bot_paused,
+        "new_entries_enabled": store.new_entries_enabled,
+    }
+
+
+# ── MANUAL OVERRIDE ───────────────────────────────────────────────────────────
+
+class OverrideStateRequest(BaseModel):
+    paused: bool | None = None
+    new_entries: bool | None = None
+
+
+@router.post("/override/state")
+async def override_state(req: OverrideStateRequest, request: Request):
+    """
+    Pause/resume the bot or toggle new-entry flow at runtime.
+    Requires authentication. Changes are in-memory (reset on restart).
+    """
+    from main import require_auth  # deferred to avoid circular import at module load
+    require_auth(request)
+
+    changed = {}
+    if req.paused is not None:
+        store.bot_paused = req.paused
+        changed["bot_paused"] = store.bot_paused
+    if req.new_entries is not None:
+        store.new_entries_enabled = req.new_entries
+        changed["new_entries_enabled"] = store.new_entries_enabled
+
+    if not changed:
+        raise HTTPException(status_code=400, detail="Provide 'paused' or 'new_entries' in body")
+
+    msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
+    print(msg)
+    try:
+        from groww.oauth import send_telegram
+        await send_telegram(f"[Ragi] {msg}")
+    except Exception:
+        pass
+
+    return {"ok": True, **changed}
+
+
+@router.post("/override/square-off")
+async def emergency_square_off(request: Request):
+    """
+    Emergency circuit breaker: close all open option positions at market price,
+    pause the bot, and broadcast a Telegram notification.
+    Requires authentication.
+    """
+    from main import require_auth
+    require_auth(request)
+
+    trader = request.app.state.trader
+
+    positions_snapshot = list(store.positions)
+    if not positions_snapshot:
+        store.bot_paused = True
+        return {"ok": True, "closed": 0, "message": "No open positions. Bot paused."}
+
+    closed = []
+    errors = []
+    for pos in positions_snapshot:
+        try:
+            ltp   = pos.get("ltp") or pos.get("entry", 0.0)
+            qty   = pos.get("quantity", 0)
+            pnl   = round((ltp - pos["entry"]) * qty, 2)
+            instr = pos["instrument"]
+            strike = pos["strike"]
+            opt_type = pos["type"]
+
+            store.realized_pnl  = round(store.realized_pnl + pnl, 2)
+            store.cumulative_pnl = round(store.cumulative_pnl + pnl, 2)
+            store.remove_position(instr, strike, opt_type)
+
+            closed.append({
+                "instrument": instr, "strike": strike, "type": opt_type,
+                "entry": pos["entry"], "exit": ltp, "pnl": pnl, "qty": qty,
+            })
+        except Exception as e:
+            errors.append(str(e))
+
+    store.bot_paused = True
+
+    summary_lines = [
+        f"  {c['instrument']} {c['strike']}{c['type']} entry={c['entry']} exit={c['exit']} pnl=₹{c['pnl']}"
+        for c in closed
+    ]
+    total_pnl = sum(c["pnl"] for c in closed)
+    tg_msg = (
+        f"[Ragi] 🚨 EMERGENCY SQUARE-OFF\n"
+        f"Closed {len(closed)} position(s), total P&L: ₹{total_pnl:,.2f}\n"
+        + "\n".join(summary_lines)
+        + "\nBot is now PAUSED."
+    )
+    try:
+        from groww.oauth import send_telegram
+        await send_telegram(tg_msg)
+    except Exception:
+        pass
+
+    print(tg_msg)
+    return {
+        "ok":      True,
+        "closed":  len(closed),
+        "total_pnl": round(total_pnl, 2),
+        "positions": closed,
+        "errors":  errors,
+        "bot_paused": True,
+    }
+
+
 @router.post("/trading/set-mode")
 async def set_trading_mode(req: ModeRequest):
     """

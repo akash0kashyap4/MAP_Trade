@@ -44,6 +44,10 @@ class LiveStore:
         self.today_volume: Dict[str, int] = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
         self.india_vix: float = 0.0
 
+        # Runtime override flags (survive until bot restart)
+        self.bot_paused: bool = False
+        self.new_entries_enabled: bool = True
+
     def set_prev_close(self, instrument: str, close: float):
         """Set yesterday's close — called once at startup."""
         info = self.prices.get(instrument)
@@ -180,6 +184,8 @@ class LiveStore:
             "bot_paused":   self.bot_paused,
             "new_entries_enabled": self.new_entries_enabled,
             "feed_status":  self.feed_status,
+            "bot_paused":   self.bot_paused,
+            "new_entries":  self.new_entries_enabled,
             "today_bias":   self.premarket_bias.get("bias", "NEUTRAL"),
             "next_check":   self.next_check_time,
             "last_tick":    self.last_tick_time,
