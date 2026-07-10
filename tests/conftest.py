@@ -9,8 +9,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Stub optional heavy dependencies so tests can import project modules without
 # installing the full production dependency set.
 for _mod in ("yfinance", "growwapi", "curl_cffi", "curl_cffi.requests",
-             "aiosqlite", "asyncpg", "colorama",
-             "colorama.Fore", "colorama.Style"):
+             "aiosqlite", "asyncpg", "colorama", "colorama.Fore", "colorama.Style",
+             "pydantic", "anthropic", "uvicorn", "fastapi",
+             "fastapi.responses", "fastapi.staticfiles", "apscheduler",
+             "apscheduler.schedulers", "apscheduler.schedulers.asyncio",
+             "apscheduler.triggers", "apscheduler.triggers.cron"):
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 

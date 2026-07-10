@@ -7,6 +7,8 @@ from datetime import datetime
 import pytz
 from typing import Optional
 
+from config import DB_PATH as _DEFAULT_DB_PATH
+
 log = logging.getLogger(__name__)
 
 # Force IPv4 (Vercel does not support IPv6 outbound)
@@ -17,7 +19,7 @@ socket.getaddrinfo = _ipv4_getaddrinfo
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 _USE_SQLITE   = not DATABASE_URL
-_SQLITE_PATH  = os.getenv("DB_PATH", "trading_bot.db")
+_SQLITE_PATH  = _DEFAULT_DB_PATH
 
 # ── SQLite DDL (? params, AUTOINCREMENT) ─────────────────────────────────────
 _SQLITE_DDL = """
