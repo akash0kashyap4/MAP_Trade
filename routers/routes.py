@@ -836,28 +836,6 @@ async def set_trading_mode(req: ModeRequest):
     return {"ok": True, "mode": req.mode}
 
 
-@router.get("/config/risk")
-async def get_risk_config():
-    """Return the active runtime risk settings."""
-    import config
-    return {
-        "paper_trade": config.TRADING.get("paper_trade", True),
-        "lots": config.TRADING.get("lots"),
-        "max_positions": config.TRADING.get("max_positions"),
-        "max_daily_loss": config.TRADING.get("max_daily_loss"),
-        "fallback_sl_pct": config.TRADING.get("fallback_sl_pct"),
-        "fallback_target_pct": config.TRADING.get("fallback_target_pct"),
-        "stop_loss_rs": config.TRADING.get("stop_loss_rs"),
-        "target_rs": config.TRADING.get("target_rs"),
-        "min_confidence": config.TRADING.get("min_confidence"),
-        "trailing_sl_trigger": config.TRADING.get("trailing_sl_trigger"),
-        "trailing_sl_step": config.TRADING.get("trailing_sl_step"),
-        "bot_paused": store.bot_paused,
-        "new_entries_enabled": store.new_entries_enabled,
-        "initial_capital": store.initial_capital,
-    }
-
-
 class OverrideModeRequest(BaseModel):
     paused: Optional[bool] = None
     new_entries_enabled: Optional[bool] = None

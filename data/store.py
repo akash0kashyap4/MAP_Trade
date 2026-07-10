@@ -180,8 +180,6 @@ class LiveStore:
             },
             "volume":       self.today_volume,
             "ai_status":    self.ai_status,
-            "bot_paused":   self.bot_paused,
-            "new_entries_enabled": self.new_entries_enabled,
             "feed_status":  self.feed_status,
             "bot_paused":   self.bot_paused,
             "new_entries":  self.new_entries_enabled,
