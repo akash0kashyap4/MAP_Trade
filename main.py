@@ -8,6 +8,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import hashlib
 import hmac
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -36,6 +37,13 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("ragi.main")
 
 
 # ─── Auth config ────────────────────────────────────────────────────────────
@@ -156,20 +164,43 @@ async def stream(request: Request):
 
 
 # ─── Simple brute-force guard ────────────────────────────────────────────────
-_login_failures: dict[str, int] = {}   # ip -> failure count
 _LOGIN_MAX_FAILS = 10
+_LOGIN_LOCKOUT_SECONDS = 15 * 60  # 15-min lockout window; resets after this
+_login_failures: dict[str, tuple[int, float]] = {}  # ip -> (count, first_failure_ts)
+
+
+def _is_rate_limited(ip: str) -> bool:
+    import time
+    entry = _login_failures.get(ip)
+    if entry is None:
+        return False
+    count, first_ts = entry
+    if time.time() - first_ts > _LOGIN_LOCKOUT_SECONDS:
+        _login_failures.pop(ip, None)
+        return False
+    return count >= _LOGIN_MAX_FAILS
+
+
+def _record_failure(ip: str) -> None:
+    import time
+    entry = _login_failures.get(ip)
+    if entry is None:
+        _login_failures[ip] = (1, time.time())
+    else:
+        count, first_ts = entry
+        _login_failures[ip] = (count + 1, first_ts)
 
 
 # ─── Auth routes ─────────────────────────────────────────────────────────────
 @app.post("/api/login")
 async def api_login(body: LoginBody, request: Request):
+    import time
     client_ip = request.client.host if request.client else "unknown"
-    if _login_failures.get(client_ip, 0) >= _LOGIN_MAX_FAILS:
-        raise HTTPException(status_code=429, detail="Too many failed attempts")
+    if _is_rate_limited(client_ip):
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
 
     if body.username == BOT_USERNAME and hmac.compare_digest(body.password, BOT_PASSWORD):
         _login_failures.pop(client_ip, None)
-        import time
         token = _make_token()
         _sessions[token] = time.time() + _SESSION_TTL
         resp = JSONResponse({"ok": True})
@@ -179,7 +210,7 @@ async def api_login(body: LoginBody, request: Request):
             max_age=60 * 60 * 24 * 7,
         )
         return resp
-    _login_failures[client_ip] = _login_failures.get(client_ip, 0) + 1
+    _record_failure(client_ip)
     raise HTTPException(status_code=401, detail="ACCESS DENIED — Invalid credentials")
 
 @app.get("/api/logout")
