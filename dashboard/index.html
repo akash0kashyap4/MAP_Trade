@@ -769,6 +769,41 @@
 
         <!-- Confidence Arc -->
         <div class="conf-arc-wrap">
+          <svg class="brain-icon" viewBox="0 0 70 70" width="68" height="68" style="flex-shrink:0;filter:drop-shadow(0 0 8px rgba(0,212,255,.5))">
+            <defs>
+              <radialGradient id="brainGrad" cx="50%" cy="38%" r="60%">
+                <stop offset="0%"  stop-color="#00d4ff" stop-opacity=".95"/>
+                <stop offset="55%" stop-color="#9b59b6" stop-opacity=".8"/>
+                <stop offset="100%" stop-color="#9b59b6" stop-opacity=".35"/>
+              </radialGradient>
+              <filter id="brainGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <g filter="url(#brainGlow)" fill="url(#brainGrad)" stroke="#00d4ff" stroke-width="0.6" stroke-opacity="0.6">
+              <!-- Left hemisphere -->
+              <path d="M35 12 C24 12 15 19 13 28 C11 34 13 40 17 44 C15 47 15 52 18 55 C21 58 25 58 28 56 C30 58 32 59 35 59 L35 12Z"/>
+              <!-- Right hemisphere -->
+              <path d="M35 12 C46 12 55 19 57 28 C59 34 57 40 53 44 C55 47 55 52 52 55 C49 58 45 58 42 56 C40 58 38 59 35 59 L35 12Z"/>
+              <!-- Center fold -->
+              <line x1="35" y1="13" x2="35" y2="58" stroke="#00d4ff" stroke-width="0.8" stroke-opacity="0.4"/>
+              <!-- Left folds -->
+              <path d="M20 26 Q26 22 28 28 Q24 32 20 30" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <path d="M16 38 Q22 34 25 40 Q20 44 16 42" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <path d="M19 50 Q25 47 27 52" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <!-- Right folds -->
+              <path d="M50 26 Q44 22 42 28 Q46 32 50 30" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <path d="M54 38 Q48 34 45 40 Q50 44 54 42" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <path d="M51 50 Q45 47 43 52" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
+              <!-- Stem -->
+              <rect x="33" y="58" width="4" height="5" rx="2" fill="#9b59b6" stroke="none"/>
+            </g>
+            <!-- Animated neural dots -->
+            <circle r="2" fill="#00d4ff" opacity="0.9"><animateMotion dur="3s" repeatCount="indefinite" path="M20,30 Q35,20 50,30 Q35,40 20,30"/></circle>
+            <circle r="1.5" fill="#fff" opacity="0.7"><animateMotion dur="4s" repeatCount="indefinite" begin="1s" path="M18,42 Q35,35 52,42 Q35,50 18,42"/></circle>
+            <circle r="1.5" fill="#9b59b6" opacity="0.9"><animateMotion dur="2.5s" repeatCount="indefinite" begin="0.5s" path="M25,52 Q35,47 45,52 Q35,57 25,52"/></circle>
+          </svg>
           <svg id="conf-svg" width="70" height="70" viewBox="0 0 70 70">
             <circle cx="35" cy="35" r="28" fill="none" stroke="#1a1a2e" stroke-width="6"/>
             <circle cx="35" cy="35" r="28" fill="none" stroke="#00d4ff" stroke-width="6"
