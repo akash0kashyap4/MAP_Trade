@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/groww/status")
 async def groww_status():
-    """Check if Groww API is connected successfully."""
+    """Check Groww API connection health."""
     return check_api_connection()
 
 
@@ -179,13 +179,13 @@ async def demo_seed():
 
 @router.get("/groww/health")
 async def groww_health():
-    """Ping Groww API and send Telegram alert with status."""
-    status = check_api_connection()
-    if status.get("status") == "connected":
-        send_telegram(f"Good morning. Ragi is ready. Groww API: Connected")
+    """Ping Groww API and return connection status."""
+    result = check_api_connection()
+    if result["ok"]:
+        send_telegram("[Ragi] Groww API health check OK.")
     else:
-        send_telegram(f"WARNING: Groww API connection failed! Check GROWW_API_KEY. Error: {status.get('message')}")
-    return status
+        send_telegram(f"[Ragi] Groww API health check FAILED: {result['message']}")
+    return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
 
@@ -537,3 +537,52 @@ async def _run_learning_sync():
     learner = Learner(agent, db)
     await learner.run_nightly_review()
     print("[routes] On-demand learning complete.")
+
+
+# ── TRADING MODE TOGGLE ───────────────────────────────────────────────────────
+
+class ModeRequest(BaseModel):
+    mode: str  # "paper" | "live"
+
+
+@router.get("/trading/mode")
+async def get_trading_mode():
+    """Return current trading mode."""
+    import config
+    return {"mode": "paper" if config.TRADING["paper_trade"] else "live"}
+
+
+@router.post("/trading/set-mode")
+async def set_trading_mode(req: ModeRequest):
+    """
+    Switch trading mode at runtime without restarting the bot.
+    Switching to 'live' requires AngelOne credentials in env.
+    """
+    import config
+
+    if req.mode not in ("paper", "live"):
+        raise HTTPException(status_code=400, detail="mode must be 'paper' or 'live'")
+
+    if req.mode == "live":
+        # Validate AngelOne credentials are configured
+        missing = [k for k in ("ANGEL_API_KEY", "ANGEL_CLIENT_ID", "ANGEL_PASSWORD", "ANGEL_TOTP_SECRET")
+                   if not config.__dict__.get(k) and not __import__("os").getenv(k, "").strip()]
+        if missing:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": f"Missing env vars: {', '.join(missing)}"}
+            )
+        # Test AngelOne login
+        try:
+            from angelone.auth import get_angel_client
+            get_angel_client()
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": f"AngelOne login failed: {e}"}
+            )
+
+    config.TRADING["paper_trade"] = (req.mode == "paper")
+    print(f"[routes] Trading mode changed → {req.mode.upper()}")
+    await send_telegram(f"⚙️ Trading mode changed to: {req.mode.upper()}")
+    return {"ok": True, "mode": req.mode}

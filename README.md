@@ -22,7 +22,7 @@ aerolink proxy) as the sole decision brain.
   brokerage + STT + txn + SEBI + stamp + GST so paper P&L matches a real broker.
 - **Self-Learning** — nightly at 21:00 IST Claude reviews the last 30 days of
   trades and can suggest rule adjustments (surfaced in the dashboard).
-- **Live Feed** — Groww API for indices + option LTPs.
+- **Live Feed** — Groww API for indices + option LTPs; REST fallback if feed drops.
 - **Global Cues at 08:30** — Dow/Nasdaq/Crude/DXY/India-VIX/prev-close fetched via
   `yfinance` + `curl_cffi` browser impersonation (Yahoo blocks bare AWS IPs).
 - **Dashboard** — FastAPI + SSE at `https://akash.mehakva.com` (Basic Auth).
@@ -47,7 +47,7 @@ main.py                  FastAPI app + lifespan startup
 │   └── strategy.py      Market context builder, 5-min resampler, S/R + sweeps
 ├── groww/
 │   ├── oauth.py         Groww API connection check & Telegram alerts
-│   ├── live_feed.py     Groww live feed loop
+│   ├── live_feed.py     Live feed + intraday candle refresh + option LTP loop
 │   ├── historical.py    Candle fetch, intraday endpoint, option chain analytics
 │   ├── quotes.py        REST LTP for indices and open option positions
 │   └── auth.py          Groww API client helper
@@ -115,6 +115,7 @@ impersonation on AWS IPs), `pydantic>=2`, `aiosqlite`, `fastapi`, `apscheduler`,
 ```
 GROWW_API_KEY=your_groww_api_key
 GROWW_SECRET_KEY=your_groww_secret_key
+ANTHROPIC_API_KEY=your_anthropic_key
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 CLAUDE_MODEL=claude-sonnet-4-6
@@ -187,7 +188,7 @@ Skipped automatically on weekends and the 16 NSE 2026 holidays.
 ## Requirements
 
 - Python 3.11+
-- Groww account with API access
+- Groww account with API access (`GROWW_API_KEY` + `GROWW_SECRET_KEY`)
 - Claude Code CLI authenticated **OR** aerolink proxy (`ANTHROPIC_BASE_URL` +
   `ANTHROPIC_API_KEY` in `~/.claude/settings.json`)
 - On AWS: `curl_cffi` is required for yfinance to work (Yahoo blocks datacenter IPs)
@@ -198,5 +199,5 @@ Skipped automatically on weekends and the 16 NSE 2026 holidays.
 
 - `paper_trade=True` by default — no live orders. Flip in `config.py` once
   strategy is proven.
-- Ensure your Groww API keys are correct and have appropriate scopes.
+- Groww API keys are long-lived; rotate them from the Groww developer console if needed.
 - The bot uses Claude Code CLI via subprocess — no direct `ANTHROPIC_API_KEY`.
