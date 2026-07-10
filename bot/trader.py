@@ -172,7 +172,7 @@ class LiveTrader:
 
         # Manual override — operator paused the bot from dashboard
         if store.bot_paused:
-            store.ai_status = "waiting"
+            store.ai_status = "paused"
             return
 
         store.ai_status = "analyzing"
@@ -256,6 +256,107 @@ class LiveTrader:
         )
         store.ai_status = "waiting"
         return closed
+
+    async def recover_active_positions(self):
+        """Recover any open positions from database on startup."""
+        try:
+            open_trades = await db.get_open_trades()
+            if not open_trades:
+                print("[trader] No open positions to recover")
+                return
+
+            print(f"[trader] Recovering {len(open_trades)} active positions...")
+            for trade in open_trades:
+                sig_id = trade.get("signal_id")
+                sl_premium = None
+                target_premium = None
+                if sig_id:
+                    signal = await db.get_signal(sig_id)
+                    if signal:
+                        ai_resp_str = signal.get("ai_response")
+                        if ai_resp_str:
+                            try:
+                                import json
+                                ai_res = json.loads(ai_resp_str)
+                                sl_premium = ai_res.get("sl_premium") or ai_res.get("sl")
+                                target_premium = ai_res.get("target_premium") or ai_res.get("target")
+                            except Exception:
+                                pass
+                        if sl_premium is None or target_premium is None:
+                            dec_log_str = signal.get("decision_log")
+                            if dec_log_str:
+                                try:
+                                    import json
+                                    dec_log = json.loads(dec_log_str)
+                                    if sl_premium is None:
+                                        sl_premium = dec_log.get("sl") or dec_log.get("sl_premium")
+                                    if target_premium is None:
+                                        target_premium = dec_log.get("target") or dec_log.get("target_premium")
+                                except Exception:
+                                    pass
+
+                instrument = trade.get("instrument")
+                action = trade.get("action")
+                option_type = "CE" if "CE" in action else "PE"
+                step = 100 if instrument == "SENSEX" else 50
+                
+                spot_price = 0.0
+                price_info = store.prices.get(instrument)
+                if price_info:
+                    spot_price = price_info.ltp
+
+                if spot_price == 0.0:
+                    try:
+                        candles_data = await asyncio.get_running_loop().run_in_executor(
+                            None, get_index_candles, instrument, "1m", 1
+                        )
+                        if candles_data and "candles" in candles_data and candles_data["candles"]:
+                            spot_price = candles_data["candles"][-1]["close"]
+                    except Exception as e:
+                        print(f"[trader] Error fetching spot price for recovery: {e}")
+
+                instrument_key = None
+                ltp = trade.get("entry_price")
+                try:
+                    instrument_key_name = f"NSE-{instrument}-"
+                    opt_data = await asyncio.get_running_loop().run_in_executor(
+                        None, get_live_option_from_chain, instrument_key_name, spot_price, option_type, step
+                    )
+                    if opt_data:
+                        instrument_key = opt_data.get("instrument_key")
+                        ltp = opt_data.get("ltp", ltp)
+                except Exception as e:
+                    print(f"[trader] Error getting option chain for recovery: {e}")
+
+                if not instrument_key:
+                    expiry = trade.get("expiry")
+                    strike = trade.get("strike")
+                    instrument_key = f"NSE-{instrument}-{expiry}-{strike}-{option_type}"
+
+                try:
+                    await request_option_subscribe(instrument_key)
+                except Exception as e:
+                    print(f"[trader] Error subscribing to recovered option feed: {e}")
+
+                pos = {
+                    "trade_db_id": trade["id"],
+                    "instrument": trade["instrument"],
+                    "action": trade["action"],
+                    "strike": trade["strike"],
+                    "expiry": trade["expiry"],
+                    "entry_price": trade["entry_price"],
+                    "quantity": trade["quantity"],
+                    "signal_id": trade["signal_id"],
+                    "instrument_key": instrument_key,
+                    "ltp": ltp,
+                    "sl": sl_premium,
+                    "target": target_premium,
+                    "type": option_type,
+                }
+                store.positions.append(pos)
+                print(f"[trader] Recovered position: {pos}")
+        except Exception as e:
+            print(f"[trader] Error in recover_active_positions: {e}")
 
     def _log_skip(self, instrument: str, reason: str, time_str: str, log: DecisionLog | None = None):
         signal = {

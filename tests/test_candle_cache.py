@@ -30,7 +30,11 @@ class TestCandleCache:
         import importlib
         import data.candle_cache as cc
         importlib.reload(cc)
-        os.unlink(self._tmp.name)
+        try:
+            os.unlink(self._tmp.name)
+        except Exception:
+            pass
+
 
     def test_has_candles_empty(self):
         assert not self.cc.has_candles("NSE_NIFTY", "2025-01-02")

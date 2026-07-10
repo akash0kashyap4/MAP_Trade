@@ -57,3 +57,63 @@ async def test_trader_disable_new_entries():
         agent.decide_trade.assert_called_once()
         mock_insert_signal.assert_called_once()
         mock_get_option.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_active_positions_recovery():
+    """Verify that trader's recover_active_positions correctly reconstructs store positions and subscribes to feeds."""
+    agent = MagicMock(spec=TradingAgent)
+    trader = LiveTrader(agent)
+    
+    # Reset store positions
+    store.positions = []
+    
+    with patch("data.database.get_open_trades") as mock_get_open, \
+         patch("data.database.get_signal") as mock_get_signal, \
+         patch("bot.trader.get_live_option_from_chain") as mock_get_option, \
+         patch("bot.trader.request_option_subscribe") as mock_sub:
+         
+        # Mock database active open trades
+        mock_get_open.return_value = [
+            {
+                "id": 42,
+                "trade_type": "paper",
+                "instrument": "NIFTY",
+                "action": "BUY_CE",
+                "strike": 24000,
+                "expiry": "2026-07-16",
+                "entry_time": "2026-07-10T11:00:00",
+                "entry_price": 120.0,
+                "quantity": 65,
+                "signal_id": 101,
+            }
+        ]
+        
+        # Mock corresponding signal
+        mock_get_signal.return_value = {
+            "id": 101,
+            "ai_response": '{"action": "BUY_CE", "confidence": 8, "sl_premium": 95.0, "target_premium": 180.0}'
+        }
+        
+        # Mock option chain retrieval
+        mock_get_option.return_value = {
+            "ltp": 122.0,
+            "strike": 24000,
+            "expiry": "2026-07-16",
+            "instrument_key": "NSE-NIFTY-2026-07-16-24000-CE"
+        }
+        
+        await trader.recover_active_positions()
+        
+        mock_get_open.assert_called_once()
+        mock_get_signal.assert_called_once_with(101)
+        
+        assert len(store.positions) == 1
+        pos = store.positions[0]
+        assert pos["instrument"] == "NIFTY"
+        assert pos["strike"] == 24000
+        assert pos["sl"] == 95.0
+        assert pos["target"] == 180.0
+        assert pos["trade_db_id"] == 42
+        mock_sub.assert_called_once_with("NSE-NIFTY-2026-07-16-24000-CE")
+
