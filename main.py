@@ -6,19 +6,16 @@ Dashboard: http://localhost:8000
 from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
-import hashlib
 import hmac
 import logging
 import os
 from pathlib import Path
 import secrets
 import sys
-from datetime import timedelta
 
 import uvicorn
-from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from data.database import init_db

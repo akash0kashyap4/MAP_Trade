@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Optional
 import pytz
 
-from config import TRADING, LOT_SIZES
+from config import TRADING
 
 IST = pytz.timezone("Asia/Kolkata")
 

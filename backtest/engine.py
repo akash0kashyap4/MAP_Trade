@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from typing import Optional
 
 import numpy as np
@@ -97,7 +97,7 @@ class BacktestEngine:
         return SENSEX_STEP if instrument == "SENSEX" else ATM_STEP
 
     def run(self, instrument: str, start_str: str, end_str: str, config: dict = None) -> BacktestResult:
-        from backtest.strategies import get_signal, init_day, STRATEGIES
+        from backtest.strategies import init_day, STRATEGIES
         config    = config or {}
         cfg_sl    = config.get("stop_loss_rs", TRADING["stop_loss_rs"])
         cfg_tgt   = config.get("target_rs",    TRADING["target_rs"])

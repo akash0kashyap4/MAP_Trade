@@ -8,12 +8,11 @@ import json
 import os
 import re
 import time
-from typing import Optional
 
 import pytz
 from datetime import datetime
 
-from config import TRADING, LOT_SIZES
+from config import LOT_SIZES
 from ai.prompts import (
     PREMARKET_SYSTEM, PREMARKET_USER,
     DECISION_SYSTEM, DECISION_USER,

@@ -424,7 +424,7 @@ def resample_5min(candles_1m: list) -> list:
     Groups by flooring the minute to the nearest 5-min boundary.
     Returns list sorted oldest-first.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     buckets: dict = {}
     for c in candles_1m:
         ts_raw = c[0]

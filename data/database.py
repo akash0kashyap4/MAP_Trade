@@ -5,7 +5,6 @@ import os
 import socket
 from datetime import datetime
 import pytz
-from typing import Optional
 
 from config import DB_PATH as _DEFAULT_DB_PATH
 

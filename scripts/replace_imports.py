@@ -1,5 +1,4 @@
 import glob
-import os
 
 files = glob.glob("**/*.py", recursive=True)
 for fpath in files:

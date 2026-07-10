@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backtest.simulator import simulate_trade, TradeResult
+from backtest.simulator import simulate_trade
 
 
 def _make_candles(prices: list[float]) -> list:
