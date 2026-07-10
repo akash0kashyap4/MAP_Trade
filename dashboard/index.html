@@ -1770,9 +1770,32 @@ function setNav(el) {
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
 })();
 
-function setTF(tf, el) {
+let _currentTF = '5m';
+async function setTF(tf, el) {
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
+  _currentTF = tf;
+
+  // Show loading state
+  const canvas = document.getElementById('chart-canvas');
+  const placeholder = document.getElementById('chart-placeholder');
+  if (canvas) canvas.style.opacity = '0.4';
+
+  try {
+    const res = await fetch(`/api/candles?instrument=NIFTY&interval=${encodeURIComponent(tf)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (canvas) canvas.style.opacity = '1';
+    if (data.candles && data.candles.length) {
+      updateCandles(data.candles);
+    } else {
+      if (placeholder) placeholder.style.display = 'flex';
+      if (canvas) { canvas.style.display = 'none'; canvas.style.opacity = '1'; }
+    }
+  } catch (e) {
+    console.error('[setTF] fetch failed:', e);
+    if (canvas) canvas.style.opacity = '1';
+  }
 }
 </script>
 </body>

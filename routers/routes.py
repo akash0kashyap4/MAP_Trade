@@ -552,6 +552,77 @@ async def get_trading_mode():
     return {"mode": "paper" if config.TRADING["paper_trade"] else "live"}
 
 
+@router.get("/candles")
+async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
+    """
+    Fetch OHLCV candles for a given instrument and interval via yfinance.
+    interval: 1m | 5m | 15m | 1h | 1D
+    """
+    import yfinance as yf
+    import pytz
+    from datetime import datetime, timedelta, time as dtime
+
+    YF_MAP = {
+        "NIFTY":     "^NSEI",
+        "BANKNIFTY": "^NSEBANK",
+        "SENSEX":    "^BSESN",
+    }
+    # interval → (yf_interval, yf_period, max_candles)
+    INTERVAL_MAP = {
+        "1m":  ("1m",  "1d",  390),
+        "5m":  ("5m",  "5d",  200),
+        "15m": ("15m", "5d",  100),
+        "1h":  ("1h",  "60d", 100),
+        "1D":  ("1d",  "1y",  250),
+    }
+
+    if interval not in INTERVAL_MAP:
+        raise HTTPException(status_code=400, detail=f"Invalid interval. Use: {list(INTERVAL_MAP)}")
+
+    yf_sym = YF_MAP.get(instrument.upper(), "^NSEI")
+    yf_interval, yf_period, max_c = INTERVAL_MAP[interval]
+    IST = pytz.timezone("Asia/Kolkata")
+
+    try:
+        loop = asyncio.get_event_loop()
+
+        def _fetch():
+            ticker = yf.Ticker(yf_sym)
+            df = ticker.history(period=yf_period, interval=yf_interval)
+            return df
+
+        df = await loop.run_in_executor(None, _fetch)
+        if df.empty:
+            return {"candles": [], "instrument": instrument, "interval": interval}
+
+        candles = []
+        for dt, row in df.iterrows():
+            try:
+                dt_ist = dt.astimezone(IST)
+            except Exception:
+                dt_ist = dt
+            # For intraday intervals filter to market hours
+            if interval in ("1m", "5m", "15m", "1h"):
+                t = dt_ist.time()
+                if not (dtime(9, 15) <= t <= dtime(15, 30)):
+                    continue
+            candles.append({
+                "time":  dt_ist.isoformat(),
+                "open":  round(float(row["Open"]),  2),
+                "high":  round(float(row["High"]),  2),
+                "low":   round(float(row["Low"]),   2),
+                "close": round(float(row["Close"]), 2),
+                "volume": int(row["Volume"]) if "Volume" in row else 0,
+            })
+
+        # Keep latest max_c candles
+        candles = candles[-max_c:]
+        return {"candles": candles, "instrument": instrument, "interval": interval}
+    except Exception as e:
+        print(f"[candles] error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/trading/set-mode")
 async def set_trading_mode(req: ModeRequest):
     """
