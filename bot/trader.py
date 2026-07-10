@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pytz
 
@@ -18,12 +17,12 @@ try:
 except Exception:
     _YF_SESSION = None
 
-from config import TRADING, INSTRUMENTS, LOT_SIZES, INITIAL_CAPITAL
+from config import TRADING, INSTRUMENTS
 from bot.order_executor import OrderExecutor
 from data.store import store
 from data import database as db
-from bot.risk import calc_quantity, calc_sl_price, calc_target_price, calc_trailing_sl, max_positions_reached
-from bot.strategy import build_market_context, is_valid_trade_time
+from bot.risk import calc_quantity
+from bot.strategy import build_market_context
 from bot.decision_log import DecisionLog
 from bot.fees import apply_slippage, realistic_pnl
 from groww.historical import (
@@ -31,7 +30,7 @@ from groww.historical import (
     get_india_vix, get_option_chain_analytics,
 )
 from groww.quotes import fetch_option_ltps
-from groww.live_feed import start_feed, request_option_subscribe
+from groww.live_feed import request_option_subscribe
 
 _executor = OrderExecutor()  # one instance for the session
 
@@ -170,6 +169,11 @@ class LiveTrader:
         time_str = now.strftime("%H:%M")
         next_tick = now.replace(second=0, microsecond=0) + timedelta(minutes=5)
         store.next_check_time = next_tick.strftime("%H:%M")
+
+        # Manual override — operator paused the bot from dashboard
+        if store.bot_paused:
+            store.ai_status = "waiting"
+            return
 
         store.ai_status = "analyzing"
         store.last_tick_time = now.strftime("%H:%M:%S")
@@ -402,6 +406,12 @@ class LiveTrader:
         })
 
         action = decision.get("action")
+        if action in ("BUY_CE", "BUY_PE") and not store.new_entries_enabled:
+            log.guard_block("NewEntriesDisabled", "new entries blocked by operator override")
+            log.finalize("SKIP", "new_entries_disabled")
+            self._log_skip(instrument, "New entries disabled by operator", time_str, log)
+            return
+
         if action in ("BUY_CE", "BUY_PE"):
             if not store.new_entries_enabled:
                 log.guard_block("NewEntries", "new entries are currently disabled")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import json
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -190,6 +189,17 @@ async def groww_health():
     return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
+
+
+def _check_same_origin(request: Request) -> None:
+    """Reject cross-origin mutation requests (CSRF mitigation for non-GET endpoints)."""
+    origin  = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    host    = request.headers.get("host", "")
+    # Allow same-host requests and requests with no Origin (server-to-server / curl)
+    for header_val in (origin, referer):
+        if header_val and host and host not in header_val:
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
 
 
 _VALID_INSTRUMENTS = {"NIFTY", "BANKNIFTY", "SENSEX"}
@@ -594,7 +604,7 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     """
     import yfinance as yf
     import pytz
-    from datetime import datetime, timedelta, time as dtime
+    from datetime import time as dtime
 
     YF_MAP = {
         "NIFTY":     "^NSEI",
@@ -692,6 +702,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     Pause/resume the bot or toggle new-entry flow at runtime.
     Requires authentication. Changes are in-memory (reset on restart).
     """
+    _check_same_origin(request)
     from main import require_auth  # deferred to avoid circular import at module load
     require_auth(request)
 
@@ -724,10 +735,9 @@ async def emergency_square_off(request: Request):
     pause the bot, and broadcast a Telegram notification.
     Requires authentication.
     """
+    _check_same_origin(request)
     from main import require_auth
     require_auth(request)
-
-    trader = request.app.state.trader
 
     positions_snapshot = list(store.positions)
     if not positions_snapshot:
