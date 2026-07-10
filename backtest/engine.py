@@ -28,14 +28,13 @@ def _get_spot_candles(instrument_key: str, date_str: str) -> list:
     return candles
 
 
-def _get_option_candles(opt_key: str, date_str: str) -> list:
-    """Cache-aware option candle fetch. DB first, Upstox API on miss."""
+def _get_option_candles(opt_key: str, date_str: str, spot_candles: list | None = None) -> list:
+    """Cache-aware synthetic option candle generator. Uses cached spot data when available."""
     if _cache_has(opt_key, date_str):
         return _cache_get(opt_key, date_str)
-    candles = get_expired_option_candles(opt_key, date_str)
+    candles = get_expired_option_candles(opt_key, date_str, spot_candles=spot_candles)
     if candles:
         _cache_save(opt_key, candles)
-    time.sleep(REQUEST_DELAY)
     return candles
 
 
@@ -283,7 +282,7 @@ class BacktestEngine:
                 print(f"  [{date_str}] no opt key for {atm_strike}{option_type} exp={expiry}")
                 continue
 
-            opt_candles = _get_option_candles(opt_key, date_str)
+            opt_candles = _get_option_candles(opt_key, date_str, spot_candles=spot_candles)
             if not opt_candles:
                 print(f"  [{date_str}] no opt candles for {opt_key}")
                 continue
@@ -434,7 +433,7 @@ class BacktestEngine:
             if not opt_key:
                 continue
 
-            opt_candles = _get_option_candles(opt_key, date_str)
+            opt_candles = _get_option_candles(opt_key, date_str, spot_candles=spot_candles)
             if not opt_candles:
                 continue
             opt_candles.sort(key=lambda c: c[0])
