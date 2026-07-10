@@ -49,15 +49,23 @@ if not _raw_pw:
     )
 BOT_PASSWORD = _raw_pw or "ChangeMe123!"
 SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
-# In-memory session store (token -> True). Fine for single-user.
-_sessions: dict[str, bool] = {}
+_SESSION_TTL = int(os.getenv("SESSION_TTL_SECONDS", 86400 * 7))  # 7 days default
+# In-memory session store: token -> expiry timestamp. Fine for single-user.
+_sessions: dict[str, float] = {}
 
 def _make_token() -> str:
     return secrets.token_urlsafe(48)
 
 def _check_session(request: Request) -> bool:
+    import time
     token = request.cookies.get("ragi_session")
-    return bool(token and _sessions.get(token))
+    if not token:
+        return False
+    expiry = _sessions.get(token)
+    if expiry is None or time.time() > expiry:
+        _sessions.pop(token, None)
+        return False
+    return True
 
 def require_auth(request: Request):
     if not _check_session(request):
@@ -161,8 +169,9 @@ async def api_login(body: LoginBody, request: Request):
 
     if body.username == BOT_USERNAME and hmac.compare_digest(body.password, BOT_PASSWORD):
         _login_failures.pop(client_ip, None)
+        import time
         token = _make_token()
-        _sessions[token] = True
+        _sessions[token] = time.time() + _SESSION_TTL
         resp = JSONResponse({"ok": True})
         resp.set_cookie(
             "ragi_session", token,
