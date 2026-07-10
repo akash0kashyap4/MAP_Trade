@@ -35,6 +35,8 @@ class LiveStore:
         self.option_prices: Dict[str, float] = {}
         self.last_tick_time: str = ""
         self.tick_count: int = 0
+        self.bot_paused: bool = False
+        self.new_entries_enabled: bool = True
 
         # Candles & indicators per instrument (populated by REST poll)
         self.today_candles: Dict[str, List[list]] = {}
@@ -133,6 +135,8 @@ class LiveStore:
         self.indicators     = {}
         self.premarket_bias = {}
         self.today_volume   = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
+        self.bot_paused     = False
+        self.new_entries_enabled = True
 
     def sse_payload(self) -> dict:
         # Last 15 candles for NIFTY (primary display instrument)
@@ -173,6 +177,8 @@ class LiveStore:
             },
             "volume":       self.today_volume,
             "ai_status":    self.ai_status,
+            "bot_paused":   self.bot_paused,
+            "new_entries_enabled": self.new_entries_enabled,
             "feed_status":  self.feed_status,
             "today_bias":   self.premarket_bias.get("bias", "NEUTRAL"),
             "next_check":   self.next_check_time,

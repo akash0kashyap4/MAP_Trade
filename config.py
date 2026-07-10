@@ -45,6 +45,13 @@ TRADING = {
     "min_confidence":  1,      # kept for schema compat — trust AI's own conf
     "trailing_sl_trigger": 0.40,   # move SL to cost when profit hits 40% of target
     "trailing_sl_step":    0.20,   # trail SL by 20% of premium each step
+    
+    # Advanced Risk Management Settings (0 / disabled by default for backward compatibility)
+    "max_risk_per_trade":        0,     # Max ₹ risk/loss per trade (e.g. 2000)
+    "max_trades_per_symbol":     0,     # Max trades per symbol per day (e.g. 3)
+    "consecutive_loss_limit":    0,     # Max consecutive losses before cooldown (e.g. 2)
+    "cooldown_duration_minutes": 120,   # Loss cooldown duration in minutes
+    "session_profit_lock":       0,     # Stop entries if daily P&L >= this (e.g. 8000)
 }
 
 SCHEDULE = {

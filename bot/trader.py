@@ -126,6 +126,10 @@ class LiveTrader:
         self._daily_loss_breaker_hit = False
 
     async def premarket_analysis(self):
+        if store.bot_paused:
+            print("[trader] premarket skipped - bot is paused")
+            store.ai_status = "waiting"
+            return
         store.ai_status = "analyzing"
         global_data = await _fetch_global_cues()
         # Fetch India VIX via Upstox (more reliable than yfinance)
@@ -150,6 +154,9 @@ class LiveTrader:
         return 9 * 60 + 15 <= mins <= 15 * 60 + 30
 
     async def market_loop_tick(self):
+        if store.bot_paused:
+            store.ai_status = "waiting"
+            return
         if not self._market_open:
             # Auto-enable if we're within market hours (bot started late)
             if self._check_market_open():
@@ -231,6 +238,19 @@ class LiveTrader:
 
         finally:
             store.ai_status = "in_trade" if store.positions else "waiting"
+
+    async def emergency_square_off(self) -> int:
+        """Exit every open position immediately and pause the bot."""
+        store.bot_paused = True
+        closed = 0
+        for pos in list(store.positions):
+            await self._exit_position(pos, reason="EMERGENCY_SQUARE_OFF")
+            closed += 1
+        await _send_telegram(
+            f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
+        )
+        store.ai_status = "waiting"
+        return closed
 
     def _log_skip(self, instrument: str, reason: str, time_str: str, log: DecisionLog | None = None):
         signal = {
@@ -387,6 +407,11 @@ class LiveTrader:
 
         action = decision.get("action")
         if action in ("BUY_CE", "BUY_PE"):
+            if not store.new_entries_enabled:
+                log.guard_block("NewEntries", "new entries are currently disabled")
+                log.finalize("SKIP", "new_entries_disabled")
+                self._log_skip(instrument, "new entries are currently disabled", time_str, log)
+                return
             option_type = "CE" if action == "BUY_CE" else "PE"
             step = 100 if instrument == "SENSEX" else 50
 

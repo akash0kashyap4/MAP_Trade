@@ -87,6 +87,9 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(trader.sl_monitor_loop())
     print("[main] SL monitor loop started (60-second interval)")
 
+    # Recover any open positions from database on startup
+    asyncio.create_task(trader.recover_active_positions())
+
     # If bot starts after 8:30 (missed the cron), run premarket analysis immediately
     from datetime import datetime
     import pytz

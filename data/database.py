@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL, instrument TEXT, action TEXT, strike INTEGER,
     expiry TEXT, confidence INTEGER, reason TEXT, indicators TEXT,
-    ai_response TEXT, decision_log TEXT, market_context TEXT
+    ai_response TEXT, decision_log TEXT, market_context TEXT,
+    signal_quality TEXT
 );
 CREATE TABLE IF NOT EXISTS trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +63,8 @@ CREATE TABLE IF NOT EXISTS candles (
 CREATE TABLE IF NOT EXISTS signals (
     id SERIAL PRIMARY KEY, timestamp TEXT NOT NULL, instrument TEXT, action TEXT,
     strike INTEGER, expiry TEXT, confidence INTEGER, reason TEXT, indicators TEXT,
-    ai_response TEXT, decision_log TEXT, market_context TEXT
+    ai_response TEXT, decision_log TEXT, market_context TEXT,
+    signal_quality TEXT
 );
 CREATE TABLE IF NOT EXISTS trades (
     id SERIAL PRIMARY KEY, trade_type TEXT DEFAULT 'paper', instrument TEXT,
@@ -118,6 +120,22 @@ async def init_db():
                     s = stmt.strip()
                     if s:
                         await db.execute(s)
+                # Dynamic SQLite migration for missing columns
+                try:
+                    async with db.execute("PRAGMA table_info(signals)") as cur:
+                        cols = [row[1] for row in await cur.fetchall()]
+                        if "signal_quality" not in cols:
+                            await db.execute("ALTER TABLE signals ADD COLUMN signal_quality TEXT")
+                except Exception as e:
+                    print(f"[DB] SQLite migration error (signal_quality): {e}")
+
+                # Create indexes for analytics performance
+                try:
+                    await db.execute("CREATE INDEX IF NOT EXISTS idx_trades_entry ON trades(entry_time)")
+                    await db.execute("CREATE INDEX IF NOT EXISTS idx_trades_exit ON trades(exit_time)")
+                except Exception as e:
+                    print(f"[DB] SQLite index creation error: {e}")
+
                 await db.commit()
             print(f"[DB] Initialized SQLite DB at {_SQLITE_PATH}")
         except Exception as e:
@@ -130,6 +148,21 @@ async def init_db():
                     s = stmt.strip()
                     if s:
                         await db.execute(s)
+                # Dynamic Postgres migration for missing columns
+                try:
+                    res = await db.fetch("SELECT column_name FROM information_schema.columns WHERE table_name='signals'")
+                    cols = [r["column_name"] for r in res]
+                    if "signal_quality" not in cols:
+                        await db.execute("ALTER TABLE signals ADD COLUMN signal_quality TEXT")
+                except Exception as e:
+                    print(f"[DB] Postgres migration error (signal_quality): {e}")
+
+                # Create indexes for analytics performance
+                try:
+                    await db.execute("CREATE INDEX IF NOT EXISTS idx_trades_entry ON trades(entry_time)")
+                    await db.execute("CREATE INDEX IF NOT EXISTS idx_trades_exit ON trades(exit_time)")
+                except Exception as e:
+                    print(f"[DB] Postgres index creation error: {e}")
             print("[DB] Initialized Postgres DB")
         except Exception as e:
             print(f"[DB] WARNING: Could not connect to Postgres: {e}")
@@ -167,7 +200,7 @@ async def insert_candle(instrument: str, interval: str, candle: list):
 # ── insert_signal ─────────────────────────────────────────────────────────────
 
 async def insert_signal(signal: dict, decision_log: dict | None = None,
-                        market_context: dict | None = None) -> int:
+                        market_context: dict | None = None, signal_quality: str | None = None) -> int:
     vals = (
         _now_ist(), signal.get("instrument"), signal.get("action"),
         signal.get("strike"), signal.get("expiry"), signal.get("confidence"),
@@ -176,18 +209,20 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
         json.dumps(signal),
         json.dumps(decision_log) if decision_log else None,
         json.dumps(market_context) if market_context else None,
+        signal_quality,
     )
     if _USE_SQLITE:
         try:
             async with await _sqlite_conn() as db:
                 cur = await db.execute(
                     "INSERT INTO signals (timestamp,instrument,action,strike,expiry,confidence,reason,"
-                    "indicators,ai_response,decision_log,market_context) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "indicators,ai_response,decision_log,market_context,signal_quality) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     vals
                 )
                 await db.commit()
                 return cur.lastrowid or 0
-        except Exception:
+        except Exception as e:
+            print(f"[DB] insert_signal SQLite error: {e}")
             return 0
     else:
         try:
@@ -195,11 +230,12 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
             async with pool.acquire() as db:
                 row = await db.fetchrow(
                     "INSERT INTO signals (timestamp,instrument,action,strike,expiry,confidence,reason,"
-                    "indicators,ai_response,decision_log,market_context) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id",
+                    "indicators,ai_response,decision_log,market_context,signal_quality) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id",
                     *vals
                 )
                 return row["id"]
-        except Exception:
+        except Exception as e:
+            print(f"[DB] insert_signal Postgres error: {e}")
             return 0
 
 
@@ -381,6 +417,32 @@ async def get_today_trades() -> list:
             return []
 
 
+async def get_open_trades() -> list:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                async with db.execute(
+                    "SELECT * FROM trades WHERE exit_time IS NULL ORDER BY entry_time"
+                ) as cur:
+                    rows = await cur.fetchall()
+                    return list(rows)
+        except Exception as e:
+            print(f"[trades/open] SQLite error: {e}")
+            return []
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                rows = await db.fetch(
+                    "SELECT * FROM trades WHERE exit_time IS NULL ORDER BY entry_time"
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            print(f"[trades/open] DB error: {e}")
+            return []
+
+
 async def get_trades(days: int = 30, completed_only: bool = False) -> list:
     if _USE_SQLITE:
         try:
@@ -482,3 +544,46 @@ async def save_backtest_run(config: dict, stats: dict):
                 )
         except Exception:
             pass
+
+
+async def get_signal(signal_id: int) -> dict | None:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                async with db.execute("SELECT * FROM signals WHERE id=?", (signal_id,)) as cur:
+                    return await cur.fetchone()
+        except Exception as e:
+            print(f"[DB] get_signal error: {e}")
+            return None
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                row = await db.fetchrow("SELECT * FROM signals WHERE id=$1", signal_id)
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"[DB] get_signal error: {e}")
+            return None
+
+
+async def get_trade(trade_id: int) -> dict | None:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                async with db.execute("SELECT * FROM trades WHERE id=?", (trade_id,)) as cur:
+                    return await cur.fetchone()
+        except Exception as e:
+            print(f"[DB] get_trade error: {e}")
+            return None
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                row = await db.fetchrow("SELECT * FROM trades WHERE id=$1", trade_id)
+                return dict(row) if row else None
+        except Exception as e:
+            print(f"[DB] get_trade error: {e}")
+            return None
+
