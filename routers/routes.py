@@ -193,12 +193,16 @@ _backtest_status = {"running": False, "progress": 0, "result": None, "error": No
 
 def _check_same_origin(request: Request) -> None:
     """Reject cross-origin mutation requests (CSRF mitigation for non-GET endpoints)."""
+    from urllib.parse import urlparse
     origin  = request.headers.get("origin", "")
     referer = request.headers.get("referer", "")
-    host    = request.headers.get("host", "")
-    # Allow same-host requests and requests with no Origin (server-to-server / curl)
+    host    = request.headers.get("host", "").split(":")[0]  # strip port for comparison
+    # Allow requests with no Origin/Referer (server-to-server / curl)
     for header_val in (origin, referer):
-        if header_val and host and host not in header_val:
+        if not header_val:
+            continue
+        parsed_host = urlparse(header_val).hostname or ""
+        if host and parsed_host != host:
             raise HTTPException(status_code=403, detail="Cross-origin request rejected")
 
 

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # installing the full production dependency set.
 for _mod in ("yfinance", "growwapi", "curl_cffi", "curl_cffi.requests",
              "aiosqlite", "asyncpg", "colorama", "colorama.Fore", "colorama.Style",
-             "pydantic", "anthropic", "uvicorn", "fastapi",
+             "anthropic", "uvicorn", "fastapi",
              "fastapi.responses", "fastapi.staticfiles", "apscheduler",
              "apscheduler.schedulers", "apscheduler.schedulers.asyncio",
              "apscheduler.triggers", "apscheduler.triggers.cron"):

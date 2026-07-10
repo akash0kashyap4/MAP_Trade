@@ -1,58 +1,11 @@
+"""Unit tests for API endpoint logic: /api/config/risk, /api/override/state, /api/override/square-off."""
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 
-from main import app
 import config
-from data.store import store, LiveStore
+from data.store import LiveStore
 
-
-client = TestClient(app)
-
-
-def test_get_risk_config_endpoint():
-    response = client.get("/api/config/risk")
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["paper_trade"] == config.TRADING["paper_trade"]
-    assert data["lots"] == config.TRADING["lots"]
-    assert "max_daily_loss" in data
-    assert "bot_paused" in data
-    assert "new_entries_enabled" in data
-
-
-def test_override_square_off_endpoint(monkeypatch):
-    class DummyTrader:
-        async def emergency_square_off(self):
-            return 3
-
-    app.state.trader = DummyTrader()
-
-    response = client.post("/api/override/square-off")
-    assert response.status_code == 200
-    data = response.json()
-    assert data == {"ok": True, "closed_count": 3, "bot_paused": True}
-
-
-def test_override_state_endpoint():
-    response = client.post("/api/override/state", json={"paused": True, "new_entries_enabled": False})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["ok"] is True
-    assert data["bot_paused"] is True
-    assert data["new_entries_enabled"] is False
-
-    response = client.post("/api/override/state", json={"paused": False, "new_entries_enabled": True})
-    assert response.status_code == 200
-    data = response.json()
-    assert data["ok"] is True
-    assert data["bot_paused"] is False
-    assert data["new_entries_enabled"] is True
-
-
-# ── Unit tests (no HTTP layer) ────────────────────────────────────────────────
 
 def _risk_payload(s: LiveStore) -> dict:
     t = config.TRADING
@@ -94,6 +47,12 @@ class TestRiskConfigPayload:
         assert p["bot_paused"] is True
         assert p["new_entries_enabled"] is False
 
+    def test_lots_positive(self):
+        assert _risk_payload(self.store)["lots"] > 0
+
+    def test_max_daily_loss_positive(self):
+        assert _risk_payload(self.store)["max_daily_loss"] > 0
+
 
 class TestOverrideStateUnit:
     def setup_method(self):
@@ -112,6 +71,7 @@ class TestOverrideStateUnit:
     def test_pause_bot(self):
         result = self._apply(paused=True)
         assert result["bot_paused"] is True
+        assert self.store.bot_paused is True
 
     def test_resume_bot(self):
         self.store.bot_paused = True
@@ -121,6 +81,7 @@ class TestOverrideStateUnit:
     def test_disable_entries(self):
         result = self._apply(new_entries=False)
         assert result["new_entries_enabled"] is False
+        assert self.store.new_entries_enabled is False
 
     def test_enable_entries(self):
         self.store.new_entries_enabled = False

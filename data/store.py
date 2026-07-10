@@ -139,8 +139,7 @@ class LiveStore:
         self.indicators     = {}
         self.premarket_bias = {}
         self.today_volume   = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
-        self.bot_paused     = False
-        self.new_entries_enabled = True
+        # bot_paused and new_entries_enabled are operator controls — intentionally NOT reset daily
 
     def sse_payload(self) -> dict:
         # Last 15 candles for NIFTY (primary display instrument)

@@ -128,7 +128,7 @@ class LiveTrader:
     async def premarket_analysis(self):
         if store.bot_paused:
             print("[trader] premarket skipped - bot is paused")
-            store.ai_status = "waiting"
+            store.ai_status = "paused"
             return
         store.ai_status = "analyzing"
         global_data = await _fetch_global_cues()
@@ -155,7 +155,7 @@ class LiveTrader:
 
     async def market_loop_tick(self):
         if store.bot_paused:
-            store.ai_status = "waiting"
+            store.ai_status = "paused"
             return
         if not self._market_open:
             # Auto-enable if we're within market hours (bot started late)

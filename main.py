@@ -204,7 +204,7 @@ async def api_login(body: LoginBody, request: Request):
         resp.set_cookie(
             "ragi_session", token,
             httponly=True, secure=True, samesite="lax",
-            max_age=60 * 60 * 24 * 7,
+            max_age=int(_SESSION_TTL),
         )
         return resp
     _record_failure(client_ip)
