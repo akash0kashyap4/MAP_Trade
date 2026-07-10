@@ -847,8 +847,20 @@ const es = new EventSource('/stream');
 let lastPrices = {};
 let lastSignalCount = 0;
 
-es.onopen = () => { console.log('[sse] connected'); };
-es.onerror = () => { updateFeedStatus('closed'); };
+es.onopen = () => {
+  console.log('[sse] connected');
+  const conn = document.getElementById('conn-status');
+  if (conn) {
+    conn.style.color = 'var(--green)';
+  }
+};
+es.onerror = () => {
+  updateFeedStatus('closed');
+  const conn = document.getElementById('conn-status');
+  if (conn) {
+    conn.style.color = 'var(--red)';
+  }
+};
 
 es.onmessage = (e) => {
   const data = JSON.parse(e.data);
@@ -864,25 +876,130 @@ es.onmessage = (e) => {
   if (data.capital)    updateCapital(data.capital);
   if (data.volume)     updateDayVolume(data.volume);
   if (data.next_check) document.getElementById('next-check').textContent = data.next_check;
+
+  const conn = document.getElementById('conn-status');
+  if (conn) {
+    conn.style.color = 'var(--green)';
+  }
 };
 
 // ── CANDLES ──
 function updateCandles(candles) {
-  const tbody = document.getElementById('candle-tbody');
-  if (!candles || !candles.length) return;
-  tbody.innerHTML = [...candles].reverse().map((c, i) => {
+  const placeholder = document.getElementById('chart-placeholder');
+  const canvas = document.getElementById('chart-canvas');
+  if (!candles || !candles.length) {
+    if (placeholder) placeholder.style.display = 'flex';
+    if (canvas) canvas.style.display = 'none';
+    return;
+  }
+  if (placeholder) placeholder.style.display = 'none';
+  if (canvas) canvas.style.display = 'block';
+
+  // Resize canvas to match display size
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const width = rect.width;
+  const height = rect.height;
+
+  // Clear background
+  ctx.clearRect(0, 0, width, height);
+
+  // Find min/max price in the window to scale
+  let minPrice = Infinity;
+  let maxPrice = -Infinity;
+  candles.forEach(c => {
+    if (c.low < minPrice) minPrice = c.low;
+    if (c.high > maxPrice) maxPrice = c.high;
+  });
+
+  // Add 10% padding top/bottom
+  const priceRange = maxPrice - minPrice || 1.0;
+  const pad = priceRange * 0.1;
+  const minVal = minPrice - pad;
+  const maxVal = maxPrice + pad;
+  const valRange = maxVal - minVal;
+
+  const paddingRight = 60;
+  const paddingLeft = 10;
+  const paddingTop = 20;
+  const paddingBottom = 20;
+
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+
+  // Draw Grid Lines (Horizontal)
+  ctx.strokeStyle = 'rgba(0, 212, 255, 0.05)';
+  ctx.lineWidth = 1;
+  ctx.font = '9px var(--mono)';
+  ctx.fillStyle = 'var(--text-dim)';
+  ctx.textAlign = 'left';
+
+  const gridSteps = 4;
+  for (let i = 0; i <= gridSteps; i++) {
+    const y = paddingTop + (chartHeight * i) / gridSteps;
+    const price = maxVal - (valRange * i) / gridSteps;
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, y);
+    ctx.lineTo(width - paddingRight, y);
+    ctx.stroke();
+
+    // Draw Price Labels on the right
+    ctx.fillText(price.toLocaleString('en-IN', {maximumFractionDigits: 1}), width - paddingRight + 5, y + 3);
+  }
+
+  // Draw Candlesticks
+  const numCandles = candles.length;
+  const candleWidth = chartWidth / numCandles;
+
+  candles.forEach((c, idx) => {
+    const x = paddingLeft + idx * candleWidth + candleWidth * 0.1;
+    const w = candleWidth * 0.8;
+
+    // Convert values to coordinates
+    const yOpen = paddingTop + chartHeight * (1 - (c.open - minVal) / valRange);
+    const yClose = paddingTop + chartHeight * (1 - (c.close - minVal) / valRange);
+    const yHigh = paddingTop + chartHeight * (1 - (c.high - minVal) / valRange);
+    const yLow = paddingTop + chartHeight * (1 - (c.low - minVal) / valRange);
+
     const bullish = c.close >= c.open;
-    const color   = bullish ? 'var(--green)' : 'var(--red)';
-    const latest  = i === 0;
-    return `<tr style="${latest ? 'color:var(--cyan)' : ''}">
-      <td>${c.time}</td>
-      <td>${c.open.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td>${c.high.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td>${c.low.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td style="color:${color};font-weight:600">${c.close.toLocaleString('en-IN', {minimumFractionDigits:2})}</td>
-      <td>${c.volume > 0 ? c.volume.toLocaleString('en-IN') : '--'}</td>
-    </tr>`;
-  }).join('');
+    const color = bullish ? '#00ff88' : '#ff3366'; // neon green vs neon red
+
+    // Draw wick
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, yHigh);
+    ctx.lineTo(x + w / 2, yLow);
+    ctx.stroke();
+
+    // Draw body
+    ctx.fillStyle = color;
+    const bodyHeight = Math.abs(yClose - yOpen) || 1; // min 1px height
+    ctx.fillRect(x, Math.min(yOpen, yClose), w, bodyHeight);
+  });
+
+  // Update chart title price
+  const latest = candles[candles.length - 1];
+  const chartPriceEl = document.getElementById('chart-price');
+  const chartChgEl = document.getElementById('chart-chg');
+  if (chartPriceEl) {
+    chartPriceEl.textContent = latest.close.toLocaleString('en-IN', {minimumFractionDigits: 2});
+    const bullish = latest.close >= latest.open;
+    chartPriceEl.style.color = bullish ? 'var(--green)' : 'var(--red)';
+  }
+  if (chartChgEl) {
+    const chg = latest.close - latest.open;
+    const chgPct = (chg / latest.open) * 100;
+    const sign = chg >= 0 ? '+' : '';
+    chartChgEl.textContent = `${sign}${chg.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)`;
+    chartChgEl.style.color = chg >= 0 ? 'var(--green)' : 'var(--red)';
+  }
 }
 
 // ── INDICATORS ──

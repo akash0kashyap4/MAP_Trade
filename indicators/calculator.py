@@ -15,7 +15,17 @@ def calculate_all(candles: list) -> dict:
     if len(candles) < 2:
         return {}
 
-    df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
+    # Ensure all candles have 7 elements (timestamp, open, high, low, close, volume, oi)
+    normalized = []
+    for c in candles:
+        if len(c) == 6:
+            normalized.append(list(c) + [0])
+        elif len(c) == 7:
+            normalized.append(list(c))
+        else:
+            normalized.append((list(c) + [0] * 7)[:7])
+
+    df = pd.DataFrame(normalized, columns=["timestamp", "open", "high", "low", "close", "volume", "oi"])
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     for col in ["open", "high", "low", "close", "volume", "oi"]:

@@ -228,12 +228,20 @@ async def trades_today():
 
 @router.get("/trades")
 async def trades(days: int = 30):
-    return await db.get_trades(days=days)
+    try:
+        return await db.get_trades(days=days)
+    except Exception as e:
+        print(f"[trades] DB error: {e}")
+        return []
 
 
 @router.get("/rules")
 async def rules():
-    return await db.get_latest_rules()
+    try:
+        return await db.get_latest_rules()
+    except Exception as e:
+        print(f"[rules] DB error: {e}")
+        return {}
 
 
 @router.post("/backtest/run")

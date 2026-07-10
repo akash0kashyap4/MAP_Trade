@@ -283,27 +283,29 @@ class LiveTrader:
         is_expiry_day = weekday == _expiry_weekdays.get(instrument, 3)
 
         # Fetch option chain analytics (PCR, IV, OI, max pain) for current nearest expiry
-        from groww.historical import get_live_option_from_chain as _glo
+        # Nearest expiry is found inside get_option_chain_analytics via Groww API
         step = 100 if instrument == "SENSEX" else 50
-        # Quick expiry lookup via chain scan (reuse cached if same day)
         _today_str = date_str
         _expiry_cache_key = f"{instrument}_{_today_str}"
         nearest_expiry = self._expiries_cache.get(_expiry_cache_key)
         if not nearest_expiry:
-            # Scan next 10 days for valid expiry
+            # Try next 8 days to find a valid Groww option chain expiry
             from datetime import date as _date
+            from groww.auth import get_groww_client as _gc
+            from groww.historical import _INSTRUMENT_MAP
+            _client = _gc()
             _td = _date.today()
-            from config import NSE_HOLIDAYS
-            import urllib.parse, requests as _req
-            from config import BASE_URL, UPSTOX_TOKEN
-            _enc = urllib.parse.quote(instrument_key, safe="")
-            for _days in range(0, 10):
+            _exch, _, _sym = _INSTRUMENT_MAP.get(instrument_key,
+                ("NSE", "FNO", instrument_key.split("|")[-1]))
+            _clean_sym = _sym.replace(" ", "")
+            for _days in range(0, 8):
                 _cand = (_td + timedelta(days=_days)).strftime("%Y-%m-%d")
                 try:
-                    _r = _req.get(f"{BASE_URL}/option/chain?instrument_key={_enc}&expiry_date={_cand}",
-                                  headers={"Authorization": f"Bearer {UPSTOX_TOKEN}", "Accept": "application/json"},
-                                  timeout=8)
-                    if _r.status_code == 200 and _r.json().get("data"):
+                    _chain = _client.get_option_chain(
+                        exchange=_exch, underlying_symbol=_clean_sym, expiry_date=_cand
+                    )
+                    _contracts = _chain if isinstance(_chain, list) else _chain.get("data", [])
+                    if _contracts:
                         nearest_expiry = _cand
                         self._expiries_cache[_expiry_cache_key] = nearest_expiry
                         break
@@ -347,6 +349,8 @@ class LiveTrader:
                 "current":   round(store.current_capital, 2),
             },
         )
+
+        store.update_indicators(instrument, context["indicators"])
 
         log.info("ContextBuilt",
                  f"phase={context.get('price_structure',{}).get('phase','?')} "
