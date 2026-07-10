@@ -7,6 +7,25 @@ from __future__ import annotations
 import sqlite3
 from config import DB_PATH
 
+_CANDLES_DDL = """
+CREATE TABLE IF NOT EXISTS candles (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    instrument TEXT NOT NULL,
+    interval   TEXT NOT NULL,
+    timestamp  TEXT NOT NULL,
+    open  REAL, high REAL, low REAL, close REAL,
+    volume INTEGER, oi INTEGER,
+    UNIQUE(instrument, interval, timestamp)
+);
+"""
+
+def _ensure_table():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript(_CANDLES_DDL)
+        conn.commit()
+
+_ensure_table()
+
 
 def save_candles(instrument_key: str, candles: list):
     """Bulk-insert candles into the candles table. Skips duplicates."""
