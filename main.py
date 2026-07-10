@@ -164,7 +164,8 @@ async def login_page():
 async def dashboard(request: Request):
     if not _check_session(request):
         return RedirectResponse("/")
-    return FileResponse(BASE_DIR / "dashboard" / "index.html")
+    return FileResponse(BASE_DIR / "dashboard" / "index.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 if __name__ == "__main__":
