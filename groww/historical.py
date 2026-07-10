@@ -62,51 +62,58 @@ def get_index_candles(instrument_key: str, date_str: str) -> list:
     except Exception as e:
         print(f"[groww.historical] Groww candles API unavailable/failed for {instrument_key}: {e}. Trying yfinance...")
 
-    # 2. yfinance Fallback
-    try:
-        yf_symbol = _YF_INDEX_MAP.get(instrument_key)
-        if not yf_symbol:
-            # Fallback guessing
-            if "Bank" in instrument_key:
-                yf_symbol = "^NSEBANK"
-            elif "SENSEX" in instrument_key or "BSE" in instrument_key:
-                yf_symbol = "^BSESN"
-            else:
-                yf_symbol = "^NSEI"
+    # 2. yfinance Fallback — try 1m first, then 5m for dates >7 days old
+    yf_symbol = _YF_INDEX_MAP.get(instrument_key)
+    if not yf_symbol:
+        if "Bank" in instrument_key:
+            yf_symbol = "^NSEBANK"
+        elif "SENSEX" in instrument_key or "BSE" in instrument_key:
+            yf_symbol = "^BSESN"
+        else:
+            yf_symbol = "^NSEI"
 
-        # Calculate start and end dates
-        dt_start = datetime.strptime(date_str, "%Y-%m-%d")
-        dt_end = dt_start + timedelta(days=1)
-        start_date_str = dt_start.strftime("%Y-%m-%d")
-        end_date_str = dt_end.strftime("%Y-%m-%d")
+    dt_start = datetime.strptime(date_str, "%Y-%m-%d")
+    dt_end   = dt_start + timedelta(days=1)
+    age_days = (datetime.now() - dt_start).days
 
-        ticker = yf.Ticker(yf_symbol)
-        df = ticker.history(start=start_date_str, end=end_date_str, interval="1m")
-        if df.empty:
-            return []
+    # yfinance 1m data: max 7 days back; 5m: max 60 days; 1h: max 730 days
+    if age_days <= 6:
+        intervals_to_try = ["1m", "5m"]
+    elif age_days <= 58:
+        intervals_to_try = ["5m", "1h"]
+    else:
+        intervals_to_try = ["1h"]
 
-        # Localize/convert to IST timezone and parse
-        candles = []
-        for dt, row in df.iterrows():
-            # Ensure time is in 09:15 to 15:30 range
-            dt_ist = dt.astimezone(IST)
-            if not (time(9, 15) <= dt_ist.time() <= time(15, 30)):
+    for yf_interval in intervals_to_try:
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            df = ticker.history(start=dt_start.strftime("%Y-%m-%d"),
+                                end=dt_end.strftime("%Y-%m-%d"),
+                                interval=yf_interval)
+            if df.empty:
                 continue
 
-            ts = dt_ist.isoformat()
-            candles.append([
-                ts,
-                float(row["Open"]),
-                float(row["High"]),
-                float(row["Low"]),
-                float(row["Close"]),
-                int(row["Volume"]) if "Volume" in row else 0
-            ])
-        return candles
+            candles = []
+            for dt, row in df.iterrows():
+                dt_ist = dt.astimezone(IST)
+                if not (time(9, 15) <= dt_ist.time() <= time(15, 30)):
+                    continue
+                candles.append([
+                    dt_ist.isoformat(),
+                    float(row["Open"]), float(row["High"]),
+                    float(row["Low"]),  float(row["Close"]),
+                    int(row["Volume"]) if "Volume" in row else 0,
+                    0,
+                ])
+            if candles:
+                if yf_interval != "1m":
+                    print(f"[groww.historical] {date_str} {instrument_key}: using {yf_interval} candles (1m not available)")
+                return candles
+        except Exception as yf_err:
+            print(f"[groww.historical] yfinance {yf_interval} failed for {instrument_key} {date_str}: {yf_err}")
+            continue
 
-    except Exception as yf_err:
-        print(f"[groww.historical] yfinance fallback failed for {instrument_key}: {yf_err}")
-        return []
+    return []
 
 
 
