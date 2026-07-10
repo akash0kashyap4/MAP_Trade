@@ -821,21 +821,19 @@
         <div id="sec-settings" class="nav-section-panel" style="display:none">
           <div class="settings-grid">
             <div class="settings-card">
-              <h4>GLOBAL SUSPENSION</h4>
+              <h4>BOT STATE</h4>
               <p>Pause or resume the runtime loop. When paused, the bot stops taking new market actions.</p>
-              <button class="settings-btn" onclick="setBotPaused(true)">PAUSE</button>
-              <button class="settings-btn" onclick="setBotPaused(false)">RESUME</button>
+              <button id="btn-pause" class="settings-btn" onclick="togglePause()">PAUSE BOT</button>
             </div>
             <div class="settings-card">
               <h4>NEW ENTRIES</h4>
               <p>Disable fresh entries while still allowing exits, SL, target, and emergency actions.</p>
-              <button class="settings-btn warn" onclick="setNewEntriesEnabled(false)">DISABLE</button>
-              <button class="settings-btn warn" onclick="setNewEntriesEnabled(true)">ENABLE</button>
+              <button id="btn-entries" class="settings-btn warn" onclick="toggleEntries()">ENABLED</button>
             </div>
             <div class="settings-card">
               <h4>EMERGENCY SQUARE-OFF</h4>
               <p>Immediately close all open positions and pause the bot. Use this only when you need fast manual intervention.</p>
-              <button class="settings-btn danger" onclick="triggerEmergencySquareOff()">SQUARE OFF</button>
+              <button id="btn-squareoff" class="settings-btn danger" onclick="confirmSquareOff()">SQUARE OFF ALL</button>
             </div>
           </div>
 
@@ -844,6 +842,10 @@
           <div id="risk-config-grid" class="risk-grid">
             <div style="color:var(--text-dim);font-size:11px">loading risk settings…</div>
           </div>
+
+          <div id="override-msg" style="display:none;margin-top:12px;padding:8px 12px;
+               background:rgba(34,211,238,0.08);border:1px solid var(--cyan);border-radius:3px;
+               font-size:10px;color:var(--cyan)"></div>
         </div><!-- /sec-settings -->
 
       </div>
@@ -1093,6 +1095,7 @@ es.onmessage = (e) => {
   if (data.capital)    updateCapital(data.capital);
   if (data.volume)     updateDayVolume(data.volume);
   if (data.next_check) document.getElementById('next-check').textContent = data.next_check;
+  _syncOverrideState(data);
 
   const conn = document.getElementById('conn-status');
   if (conn) {
@@ -1951,6 +1954,127 @@ function setNav(el) {
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
 })();
 loadRiskConfig();
+
+// ── Settings panel ─────────────────────────────────────────────────────────
+let _botPaused = false;
+let _newEntries = true;
+
+async function loadRiskConfig() {
+  try {
+    const r = await fetch('/api/config/risk');
+    if (!r.ok) return;
+    const d = await r.json();
+    _botPaused  = d.bot_paused;
+    _newEntries = d.new_entries_enabled;
+    _updateOverrideBtns();
+
+    const grid = document.getElementById('risk-grid');
+    if (!grid) return;
+    const rows = [
+      ['Paper Trade',       d.paper_trade ? 'YES' : 'LIVE', d.paper_trade ? 'var(--amber)' : 'var(--red)'],
+      ['Lots',              d.lots,                          'var(--cyan)'],
+      ['Max Positions',     d.max_positions,                 'var(--text)'],
+      ['Max Daily Loss',    `₹${(d.max_daily_loss||0).toLocaleString()}`, 'var(--red)'],
+      ['SL Pct (fallback)', `${((d.fallback_sl_pct||0)*100).toFixed(0)}%`, 'var(--amber)'],
+      ['Target Pct (fb)',   `${((d.fallback_target_pct||0)*100).toFixed(0)}%`, 'var(--green)'],
+      ['Trail Trigger',     `${((d.trailing_sl_trigger||0)*100).toFixed(0)}%`, 'var(--cyan)'],
+      ['Trail Step',        `${((d.trailing_sl_step||0)*100).toFixed(0)}%`,    'var(--cyan)'],
+    ];
+    grid.innerHTML = rows.map(([label, val, color]) => `
+      <div style="background:var(--bg3);border:1px solid var(--grid);border-radius:3px;padding:7px 10px">
+        <div style="font-family:var(--label);font-size:9px;letter-spacing:2px;color:var(--text-dim);margin-bottom:3px">${label}</div>
+        <div style="font-size:13px;font-weight:600;color:${color}">${val}</div>
+      </div>`).join('');
+  } catch(e) { console.warn('[settings] loadRiskConfig failed:', e); }
+}
+
+function _updateOverrideBtns() {
+  const pb = document.getElementById('btn-pause');
+  const eb = document.getElementById('btn-entries');
+  if (pb) {
+    pb.textContent  = _botPaused ? 'RESUME BOT' : 'PAUSE BOT';
+    pb.style.color  = _botPaused ? 'var(--green)' : 'var(--amber)';
+    pb.style.borderColor = _botPaused ? 'var(--green)' : 'var(--amber)';
+  }
+  if (eb) {
+    eb.textContent = _newEntries ? 'ENABLED' : 'DISABLED';
+    eb.style.color = _newEntries ? 'var(--green)' : 'var(--red)';
+    eb.style.borderColor = _newEntries ? 'var(--green)' : 'var(--red)';
+  }
+}
+
+function _showOverrideMsg(msg, ok) {
+  const el = document.getElementById('override-msg');
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.borderColor = ok ? 'var(--green)' : 'var(--red)';
+  el.style.background  = ok ? 'rgba(0,255,136,0.06)' : 'rgba(255,51,85,0.06)';
+  el.style.color = ok ? 'var(--green)' : 'var(--red)';
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+async function togglePause() {
+  try {
+    const r = await fetch('/api/override/state', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ paused: !_botPaused }),
+    });
+    const d = await r.json();
+    if (!r.ok) { _showOverrideMsg(d.detail || 'Error', false); return; }
+    _botPaused = d.bot_paused;
+    _updateOverrideBtns();
+    _showOverrideMsg(`Bot ${_botPaused ? 'PAUSED' : 'RESUMED'} successfully.`, true);
+  } catch(e) { _showOverrideMsg('Request failed: ' + e, false); }
+}
+
+async function toggleEntries() {
+  try {
+    const r = await fetch('/api/override/state', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ new_entries: !_newEntries }),
+    });
+    const d = await r.json();
+    if (!r.ok) { _showOverrideMsg(d.detail || 'Error', false); return; }
+    _newEntries = d.new_entries_enabled;
+    _updateOverrideBtns();
+    _showOverrideMsg(`New entries ${_newEntries ? 'ENABLED' : 'DISABLED'}.`, true);
+  } catch(e) { _showOverrideMsg('Request failed: ' + e, false); }
+}
+
+async function confirmSquareOff() {
+  if (!confirm('⚠️ EMERGENCY SQUARE-OFF\n\nClose ALL open positions at market price and pause the bot?\n\nThis cannot be undone.')) return;
+  const btn = document.getElementById('btn-squareoff');
+  if (btn) { btn.textContent = 'CLOSING…'; btn.disabled = true; }
+  try {
+    const r = await fetch('/api/override/square-off', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) {
+      _showOverrideMsg(d.detail || 'Error', false);
+    } else {
+      _botPaused = true;
+      _updateOverrideBtns();
+      _showOverrideMsg(`Square-off complete: ${d.closed} position(s) closed. Total P&L: ₹${(d.total_pnl||0).toLocaleString()}`, true);
+    }
+  } catch(e) { _showOverrideMsg('Request failed: ' + e, false); }
+  if (btn) { btn.textContent = 'SQUARE OFF ALL'; btn.disabled = false; }
+}
+
+// Sync override button state from SSE payload
+function _syncOverrideState(payload) {
+  if (payload.bot_paused  !== undefined) _botPaused  = payload.bot_paused;
+  if (payload.new_entries !== undefined) _newEntries = payload.new_entries;
+  _updateOverrideBtns();
+}
+
+// Load risk config when Settings nav is clicked
+document.querySelectorAll('.nav-item').forEach(n => {
+  if (n.textContent.includes('Settings')) {
+    n.addEventListener('click', loadRiskConfig);
+  }
+});
 
 let _currentTF = '5m';
 async function setTF(tf, el) {

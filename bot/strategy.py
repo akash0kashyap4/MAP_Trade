@@ -1,6 +1,5 @@
 from __future__ import annotations
 from indicators.calculator import calculate_all, resample_5min, calculate_price_structure
-from config import TRADING
 
 # Last N 5-min candles sent to Claude = 60 minutes of context
 CANDLE_WINDOW = 12

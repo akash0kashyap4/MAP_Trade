@@ -101,4 +101,4 @@ def is_market_day(d: date | None = None) -> bool:
     return d.weekday() < 5 and d not in NSE_HOLIDAYS
 
 REQUEST_DELAY = 0.35
-DB_PATH = "trading_bot.db"
+DB_PATH = os.getenv("DB_PATH", "trading_bot.db")

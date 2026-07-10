@@ -10,7 +10,7 @@ Usage (from API):
 """
 from __future__ import annotations
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 
 from config import REQUEST_DELAY, INSTRUMENTS, ATM_STEP, SENSEX_STEP
 from upstox.historical import (

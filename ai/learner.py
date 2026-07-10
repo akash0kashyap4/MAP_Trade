@@ -3,8 +3,7 @@ import numpy as np
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ai.agent import TradingAgent
-    from data.database import get_trades, save_learning_rules
+    pass
 
 
 async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: dict, notify_fn=None):

@@ -10,7 +10,6 @@ aiosqlite>=0.20.0
 requests>=2.32.3
 aiohttp>=3.9.5
 numpy>=1.26.4
-scipy>=1.13.0
 colorama>=0.4.6
 python-telegram-bot>=21.3
 websockets>=12.0
@@ -20,3 +19,4 @@ asyncpg>=0.29.0
 growwapi
 smartapi-python
 pyotp
+openpyxl

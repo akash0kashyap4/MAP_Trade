@@ -1,6 +1,5 @@
 from __future__ import annotations
 import asyncio
-import json
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
@@ -29,7 +28,9 @@ async def demo_seed():
 
     IST = pytz.timezone("Asia/Kolkata")
     now = datetime.now(IST)
-    t = lambda mins_ago: (now - timedelta(minutes=mins_ago)).strftime("%H:%M")
+
+    def t(mins_ago):
+        return (now - timedelta(minutes=mins_ago)).strftime("%H:%M")
 
     store.prices["NIFTY"].ltp        = 24187.40
     store.prices["NIFTY"].prev_close = 24052.95
@@ -190,6 +191,26 @@ async def groww_health():
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
 
 
+def _check_same_origin(request: Request) -> None:
+    """Reject cross-origin mutation requests (CSRF mitigation for non-GET endpoints)."""
+    from urllib.parse import urlparse
+    origin  = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    host    = request.headers.get("host", "").split(":")[0]  # strip port for comparison
+    # Allow requests with no Origin/Referer (server-to-server / curl)
+    for header_val in (origin, referer):
+        if not header_val:
+            continue
+        parsed_host = urlparse(header_val).hostname or ""
+        if host and parsed_host != host:
+            raise HTTPException(status_code=403, detail="Cross-origin request rejected")
+
+
+_VALID_INSTRUMENTS = {"NIFTY", "BANKNIFTY", "SENSEX"}
+_VALID_STRATEGIES = {"first_candle", "orb15", "rsi_reversal", "ema_trend", "gap_direction"}
+_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
+
+
 class BacktestRequest(BaseModel):
     instrument:          str  = "NIFTY"
     start_date:          str  = "2025-01-01"
@@ -201,6 +222,23 @@ class BacktestRequest(BaseModel):
     lots:                Optional[int]   = None
     max_trades_per_day:  Optional[int]   = None
     max_daily_loss:      Optional[float] = None
+
+    def validate_request(self):
+        import re
+        from datetime import datetime
+        if self.instrument not in _VALID_INSTRUMENTS:
+            raise ValueError(f"instrument must be one of {_VALID_INSTRUMENTS}")
+        if self.strategy not in _VALID_STRATEGIES:
+            raise ValueError(f"strategy must be one of {_VALID_STRATEGIES}")
+        for field_name, date_str in (("start_date", self.start_date), ("end_date", self.end_date)):
+            if not re.match(_DATE_RE, date_str):
+                raise ValueError(f"{field_name} must be YYYY-MM-DD")
+            try:
+                datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"{field_name} is not a valid date")
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be before end_date")
 
 
 @router.get("/backtest/strategies")
@@ -228,6 +266,7 @@ async def trades_today():
 
 @router.get("/trades")
 async def trades(days: int = 30):
+    days = max(1, min(days, 365))  # cap between 1 and 365 days
     try:
         return await db.get_trades(days=days)
     except Exception as e:
@@ -246,6 +285,10 @@ async def rules():
 
 @router.post("/backtest/run")
 async def backtest_run(req: BacktestRequest, background_tasks: BackgroundTasks):
+    try:
+        req.validate_request()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if _backtest_status["running"]:
         raise HTTPException(status_code=409, detail="Backtest already running")
 
@@ -262,11 +305,16 @@ def _run_backtest_sync(req: BacktestRequest):
     """Runs in a thread — never blocks the event loop."""
     from backtest.engine import BacktestEngine
     config = {}
-    if req.stop_loss_rs:       config["stop_loss_rs"]       = req.stop_loss_rs
-    if req.target_rs:          config["target_rs"]          = req.target_rs
-    if req.lots:               config["lots"]               = req.lots
-    if req.max_trades_per_day: config["max_trades_per_day"] = req.max_trades_per_day
-    if req.max_daily_loss:     config["max_daily_loss"]     = req.max_daily_loss
+    if req.stop_loss_rs:
+        config["stop_loss_rs"] = req.stop_loss_rs
+    if req.target_rs:
+        config["target_rs"] = req.target_rs
+    if req.lots:
+        config["lots"] = req.lots
+    if req.max_trades_per_day:
+        config["max_trades_per_day"] = req.max_trades_per_day
+    if req.max_daily_loss:
+        config["max_daily_loss"] = req.max_daily_loss
 
     config["strategy"] = req.strategy
     engine = BacktestEngine(use_ai_brain=req.use_ai)
@@ -280,7 +328,7 @@ async def _run_backtest(req: BacktestRequest):
     _backtest_status["result"]  = None
     _backtest_status["trades_done"] = 0
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result, config = await loop.run_in_executor(None, _run_backtest_sync, req)
 
         stats = {
@@ -399,7 +447,7 @@ async def _run_all_strategies(req: BacktestRequest):
     _backtest_status["error"]   = None
     _backtest_status["result"]  = None
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         comparison = []
 
         # Run all 5 rule-based strategies (always without AI so comparison is fair)
@@ -512,7 +560,7 @@ async def _run_download(req: DataDownloadRequest):
     _download_status["error"]   = None
     _download_status["result"]  = None
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, _run_download_sync, req)
         _download_status["result"] = result
     except Exception as e:
@@ -560,7 +608,7 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     """
     import yfinance as yf
     import pytz
-    from datetime import datetime, timedelta, time as dtime
+    from datetime import time as dtime
 
     YF_MAP = {
         "NIFTY":     "^NSEI",
@@ -584,7 +632,7 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     IST = pytz.timezone("Asia/Kolkata")
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _fetch():
             ticker = yf.Ticker(yf_sym)
@@ -620,7 +668,136 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
         return {"candles": candles, "instrument": instrument, "interval": interval}
     except Exception as e:
         print(f"[candles] error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ── CONFIG / RISK READ-OUT ───────────────────────────────────────────────────
+
+@router.get("/config/risk")
+async def get_risk_config():
+    """Return live risk parameters from config.TRADING for the dashboard settings panel."""
+    import config
+    t = config.TRADING
+    return {
+        "paper_trade":         t.get("paper_trade", True),
+        "lots":                t.get("lots", 1),
+        "max_positions":       t.get("max_positions", 2),
+        "max_daily_loss":      t.get("max_daily_loss", 5000),
+        "fallback_sl_pct":     t.get("fallback_sl_pct", 0.30),
+        "fallback_target_pct": t.get("fallback_target_pct", 0.60),
+        "trailing_sl_trigger": t.get("trailing_sl_trigger", 0.40),
+        "trailing_sl_step":    t.get("trailing_sl_step", 0.20),
+        "min_confidence":      t.get("min_confidence", 1),
+        "bot_paused":          store.bot_paused,
+        "new_entries_enabled": store.new_entries_enabled,
+    }
+
+
+# ── MANUAL OVERRIDE ───────────────────────────────────────────────────────────
+
+class OverrideStateRequest(BaseModel):
+    paused: bool | None = None
+    new_entries: bool | None = None
+
+
+@router.post("/override/state")
+async def override_state(req: OverrideStateRequest, request: Request):
+    """
+    Pause/resume the bot or toggle new-entry flow at runtime.
+    Requires authentication. Changes are in-memory (reset on restart).
+    """
+    _check_same_origin(request)
+    from main import require_auth  # deferred to avoid circular import at module load
+    require_auth(request)
+
+    changed = {}
+    if req.paused is not None:
+        store.bot_paused = req.paused
+        changed["bot_paused"] = store.bot_paused
+    if req.new_entries is not None:
+        store.new_entries_enabled = req.new_entries
+        changed["new_entries_enabled"] = store.new_entries_enabled
+
+    if not changed:
+        raise HTTPException(status_code=400, detail="Provide 'paused' or 'new_entries' in body")
+
+    msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
+    print(msg)
+    try:
+        from groww.oauth import send_telegram
+        await send_telegram(f"[Ragi] {msg}")
+    except Exception:
+        pass
+
+    return {"ok": True, **changed}
+
+
+@router.post("/override/square-off")
+async def emergency_square_off(request: Request):
+    """
+    Emergency circuit breaker: close all open option positions at market price,
+    pause the bot, and broadcast a Telegram notification.
+    Requires authentication.
+    """
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
+
+    positions_snapshot = list(store.positions)
+    if not positions_snapshot:
+        store.bot_paused = True
+        return {"ok": True, "closed": 0, "message": "No open positions. Bot paused."}
+
+    closed = []
+    errors = []
+    for pos in positions_snapshot:
+        try:
+            ltp   = pos.get("ltp") or pos.get("entry", 0.0)
+            qty   = pos.get("quantity", 0)
+            pnl   = round((ltp - pos["entry"]) * qty, 2)
+            instr = pos["instrument"]
+            strike = pos["strike"]
+            opt_type = pos["type"]
+
+            store.realized_pnl  = round(store.realized_pnl + pnl, 2)
+            store.cumulative_pnl = round(store.cumulative_pnl + pnl, 2)
+            store.remove_position(instr, strike, opt_type)
+
+            closed.append({
+                "instrument": instr, "strike": strike, "type": opt_type,
+                "entry": pos["entry"], "exit": ltp, "pnl": pnl, "qty": qty,
+            })
+        except Exception as e:
+            errors.append(str(e))
+
+    store.bot_paused = True
+
+    summary_lines = [
+        f"  {c['instrument']} {c['strike']}{c['type']} entry={c['entry']} exit={c['exit']} pnl=₹{c['pnl']}"
+        for c in closed
+    ]
+    total_pnl = sum(c["pnl"] for c in closed)
+    tg_msg = (
+        f"[Ragi] 🚨 EMERGENCY SQUARE-OFF\n"
+        f"Closed {len(closed)} position(s), total P&L: ₹{total_pnl:,.2f}\n"
+        + "\n".join(summary_lines)
+        + "\nBot is now PAUSED."
+    )
+    try:
+        from groww.oauth import send_telegram
+        await send_telegram(tg_msg)
+    except Exception:
+        pass
+
+    print(tg_msg)
+    return {
+        "ok":      True,
+        "closed":  len(closed),
+        "total_pnl": round(total_pnl, 2),
+        "positions": closed,
+        "errors":  errors,
+        "bot_paused": True,
+    }
 
 
 @router.post("/trading/set-mode")
@@ -657,28 +834,6 @@ async def set_trading_mode(req: ModeRequest):
     print(f"[routes] Trading mode changed → {req.mode.upper()}")
     await send_telegram(f"⚙️ Trading mode changed to: {req.mode.upper()}")
     return {"ok": True, "mode": req.mode}
-
-
-@router.get("/config/risk")
-async def get_risk_config():
-    """Return the active runtime risk settings."""
-    import config
-    return {
-        "paper_trade": config.TRADING.get("paper_trade", True),
-        "lots": config.TRADING.get("lots"),
-        "max_positions": config.TRADING.get("max_positions"),
-        "max_daily_loss": config.TRADING.get("max_daily_loss"),
-        "fallback_sl_pct": config.TRADING.get("fallback_sl_pct"),
-        "fallback_target_pct": config.TRADING.get("fallback_target_pct"),
-        "stop_loss_rs": config.TRADING.get("stop_loss_rs"),
-        "target_rs": config.TRADING.get("target_rs"),
-        "min_confidence": config.TRADING.get("min_confidence"),
-        "trailing_sl_trigger": config.TRADING.get("trailing_sl_trigger"),
-        "trailing_sl_step": config.TRADING.get("trailing_sl_step"),
-        "bot_paused": store.bot_paused,
-        "new_entries_enabled": store.new_entries_enabled,
-        "initial_capital": store.initial_capital,
-    }
 
 
 class OverrideModeRequest(BaseModel):

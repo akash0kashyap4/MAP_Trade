@@ -4,6 +4,7 @@ import math
 import pytz
 import yfinance as yf
 from groww.auth import get_groww_client
+from groww.pricing import bs_option_price as _bs_option_price_impl
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -128,7 +129,7 @@ def get_india_vix() -> float:
         ltp = res.get("ltp") or res.get("lastPrice") or res.get("last_price")
         if ltp:
             return float(ltp)
-    except Exception as e:
+    except Exception:
         pass
 
     # yfinance Fallback
@@ -199,41 +200,54 @@ def get_expired_option_key(instrument_key: str, expiry: str, strike: int, option
 
 def _bs_option_price(S: float, K: float, T_days: float,
                      sigma: float = 0.15, option_type: str = "CE") -> float:
-    """Black-Scholes option price — Abramowitz & Stegun normal CDF approximation."""
-    import math
-    T = max(T_days / 365.0, 1 / 365.0)
-    r = 0.065  # India risk-free rate ~6.5%
+    """Delegate to groww.pricing module (pure math, no external deps)."""
+    return _bs_option_price_impl(S, K, T_days, sigma, option_type)
 
-    def _ncdf(x: float) -> float:
-        k = 1.0 / (1.0 + 0.2316419 * abs(x))
-        p = 0.3989422803 * math.exp(-0.5 * x * x)
-        poly = k * (0.319381530 + k * (-0.356563782 + k * (
-            1.781477937 + k * (-1.821255978 + k * 1.330274429))))
-        cdf = 1.0 - p * poly
-        return cdf if x >= 0 else 1.0 - cdf
 
-    try:
-        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-        d2 = d1 - sigma * math.sqrt(T)
+def _synthetic_option_candles_from_spot(spot_candles: list, expiry: str, strike: int,
+                                          option_type: str, date_str: str) -> list:
+    """Build Black-Scholes synthetic option candles from already-fetched spot candles."""
+    from datetime import datetime
+    expiry_dt = datetime.strptime(expiry, "%Y-%m-%d").date()
+    trade_dt  = datetime.strptime(date_str, "%Y-%m-%d").date()
+    T_days    = max((expiry_dt - trade_dt).days, 0)
+    sigma     = 0.20 if T_days == 0 else 0.15
+
+    option_candles = []
+    for c in spot_candles:
+        ts      = c[0]
+        s_open  = float(c[1])
+        s_high  = float(c[2])
+        s_low   = float(c[3])
+        s_close = float(c[4])
+
+        o_p = _bs_option_price(s_open,  strike, T_days, sigma, option_type)
+        c_p = _bs_option_price(s_close, strike, T_days, sigma, option_type)
+
         if option_type == "CE":
-            price = S * _ncdf(d1) - K * math.exp(-r * T) * _ncdf(d2)
+            h_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
+            l_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
         else:
-            price = K * math.exp(-r * T) * _ncdf(-d2) - S * _ncdf(-d1)
-        return max(round(price, 2), 0.05)
-    except Exception:
-        return 1.0
+            h_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
+            l_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
+
+        opt_high = max(o_p, h_p, c_p)
+        opt_low  = min(o_p, l_p, c_p)
+        option_candles.append([ts, o_p, opt_high, opt_low, c_p, 0])
+    return option_candles
 
 
-def get_expired_option_candles(opt_key: str, date_str: str) -> list:
+def get_expired_option_candles(opt_key: str, date_str: str,
+                                spot_candles: list | None = None) -> list:
     """
     Generate synthetic 1-min option candles using Black-Scholes for backtesting.
-    Fetches underlying spot candles, then prices the option at each bar.
+    Pass spot_candles directly (from cache) to avoid a redundant yfinance fetch.
     opt_key format: "NSE_INDEX|Nifty 50|2025-01-16|24000|CE"
     """
     try:
         parts = opt_key.split("|")
         if len(parts) == 5:
-            instrument_key = "|".join(parts[:2])   # "NSE_INDEX|Nifty 50"
+            instrument_key = "|".join(parts[:2])
             expiry       = parts[2]
             strike       = int(parts[3])
             option_type  = parts[4]
@@ -245,42 +259,20 @@ def get_expired_option_candles(opt_key: str, date_str: str) -> list:
         else:
             return []
 
-        from datetime import datetime
-        expiry_dt = datetime.strptime(expiry, "%Y-%m-%d").date()
-        trade_dt  = datetime.strptime(date_str, "%Y-%m-%d").date()
-        T_days    = max((expiry_dt - trade_dt).days, 0)
-
-        # Use higher IV for expiry day (gamma risk)
-        sigma = 0.20 if T_days == 0 else 0.15
-
-        spot_candles = get_index_candles(instrument_key, date_str)
+        if not spot_candles:
+            # Try cache first, then yfinance
+            try:
+                from data.candle_cache import get_candles as _cc_get, has_candles as _cc_has
+                if _cc_has(instrument_key, date_str):
+                    spot_candles = _cc_get(instrument_key, date_str)
+            except Exception:
+                pass
+            if not spot_candles:
+                spot_candles = get_index_candles(instrument_key, date_str)
         if not spot_candles:
             return []
 
-        option_candles = []
-        for c in spot_candles:
-            ts      = c[0]
-            s_open  = float(c[1])
-            s_high  = float(c[2])
-            s_low   = float(c[3])
-            s_close = float(c[4])
-
-            o_p = _bs_option_price(s_open,  strike, T_days, sigma, option_type)
-            c_p = _bs_option_price(s_close, strike, T_days, sigma, option_type)
-
-            # High/Low: CE gains on up-move, PE gains on down-move
-            if option_type == "CE":
-                h_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
-                l_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
-            else:
-                h_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
-                l_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
-
-            opt_high = max(o_p, h_p, c_p)
-            opt_low  = min(o_p, l_p, c_p)
-            option_candles.append([ts, o_p, opt_high, opt_low, c_p, 0])
-
-        return option_candles
+        return _synthetic_option_candles_from_spot(spot_candles, expiry, strike, option_type, date_str)
     except Exception as e:
         print(f"[historical] get_expired_option_candles error for {opt_key}: {e}")
         return []
@@ -343,7 +335,7 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
                 "oi_change":   round(atm_pe_oi - atm_ce_oi, 0),
                 "days_to_exp": days_to_exp,
             }
-    except Exception as e:
+    except Exception:
         # Expected if token lacks options subscription/permissions
         pass
 

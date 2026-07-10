@@ -202,13 +202,19 @@ def _detect_phase(closes: list, trend_bias: str, atr: float) -> str:
     move_30m = abs(closes[-1] - closes[-6]) if len(closes) >= 6 else 0
     is_spike = bool(atr and move_30m > atr * 1.5)
     if trend_bias == "BULLISH":
-        if down_moves >= 2: return "PULLBACK"
-        if up_moves == 3 and is_spike: return "IMPULSE_UP"
-        if up_moves >= 2: return "TRENDING_UP"
+        if down_moves >= 2:
+            return "PULLBACK"
+        if up_moves == 3 and is_spike:
+            return "IMPULSE_UP"
+        if up_moves >= 2:
+            return "TRENDING_UP"
     elif trend_bias == "BEARISH":
-        if up_moves >= 2: return "PULLBACK"
-        if down_moves == 3 and is_spike: return "IMPULSE_DOWN"
-        if down_moves >= 2: return "TRENDING_DOWN"
+        if up_moves >= 2:
+            return "PULLBACK"
+        if down_moves == 3 and is_spike:
+            return "IMPULSE_DOWN"
+        if down_moves >= 2:
+            return "TRENDING_DOWN"
     return "CONSOLIDATION"
 
 
@@ -323,15 +329,23 @@ def calculate_price_structure(candles_5m: list) -> dict:
 
     # ── Trend strength: weighted vote ─────────────────────────────────────────
     bull, bear = 0, 0
-    if structure_15m == "BULLISH":   bull += 3
-    elif structure_15m == "BEARISH": bear += 3
-    if structure_5m == "BULLISH":    bull += 2
-    elif structure_5m == "BEARISH":  bear += 2
-    if bos == "BULLISH_BOS":         bull += 2
-    elif bos == "BEARISH_BOS":       bear += 2
+    if structure_15m == "BULLISH":
+        bull += 3
+    elif structure_15m == "BEARISH":
+        bear += 3
+    if structure_5m == "BULLISH":
+        bull += 2
+    elif structure_5m == "BEARISH":
+        bear += 2
+    if bos == "BULLISH_BOS":
+        bull += 2
+    elif bos == "BEARISH_BOS":
+        bear += 2
     if opening_range:
-        if opening_range["position"] == "ABOVE_OR":   bull += 1
-        elif opening_range["position"] == "BELOW_OR": bear += 1
+        if opening_range["position"] == "ABOVE_OR":
+            bull += 1
+        elif opening_range["position"] == "BELOW_OR":
+            bear += 1
 
     # ── Indicator fallback when 15m has too few bars (early-day trending) ────
     # In a clean uptrend, no bar is the highest of its neighbors → zero swings
@@ -367,7 +381,7 @@ def calculate_price_structure(candles_5m: list) -> dict:
     all_sh = sh_5m + sh_15m
     all_sl = sl_5m + sl_15m
     resistance_levels = sorted({round(h, 0) for h in all_sh if h > current_price})[:3]
-    support_levels    = sorted({round(l, 0) for l in all_sl if l < current_price}, reverse=True)[:3]
+    support_levels    = sorted({round(lv, 0) for lv in all_sl if lv < current_price}, reverse=True)[:3]
 
     # ── Liquidity sweep ───────────────────────────────────────────────────────
     liq_sweep, sweep_level = _detect_sweep(w5, all_sh, all_sl, current_price, atr_5m)
@@ -410,7 +424,7 @@ def resample_5min(candles_1m: list) -> list:
     Groups by flooring the minute to the nearest 5-min boundary.
     Returns list sorted oldest-first.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     buckets: dict = {}
     for c in candles_1m:
         ts_raw = c[0]
@@ -435,12 +449,12 @@ def resample_5min(candles_1m: list) -> list:
             bucket_key = dt.replace(minute=floored_min, second=0, microsecond=0)
         except Exception:
             continue
-        o, h, l, cl, vol = float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5]) if c[5] else 0.0
+        o, h, low, cl, vol = float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5]) if c[5] else 0.0
         if bucket_key not in buckets:
-            buckets[bucket_key] = [bucket_key.isoformat(), o, h, l, cl, vol, 0]
+            buckets[bucket_key] = [bucket_key.isoformat(), o, h, low, cl, vol, 0]
         else:
             buckets[bucket_key][2] = max(buckets[bucket_key][2], h)   # high
-            buckets[bucket_key][3] = min(buckets[bucket_key][3], l)   # low
+            buckets[bucket_key][3] = min(buckets[bucket_key][3], low)  # low
             buckets[bucket_key][4] = cl                                # close = last
             buckets[bucket_key][5] += vol                              # sum volume
     return sorted(buckets.values(), key=lambda x: x[0])

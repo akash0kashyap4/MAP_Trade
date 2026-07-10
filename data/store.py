@@ -1,6 +1,6 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import Dict, List
 import pytz
 from datetime import datetime
 from config import INITIAL_CAPITAL
@@ -43,6 +43,10 @@ class LiveStore:
         self.indicators: Dict[str, dict] = {}
         self.today_volume: Dict[str, int] = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
         self.india_vix: float = 0.0
+
+        # Runtime override flags (survive until bot restart)
+        self.bot_paused: bool = False
+        self.new_entries_enabled: bool = True
 
     def set_prev_close(self, instrument: str, close: float):
         """Set yesterday's close — called once at startup."""
@@ -135,8 +139,7 @@ class LiveStore:
         self.indicators     = {}
         self.premarket_bias = {}
         self.today_volume   = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
-        self.bot_paused     = False
-        self.new_entries_enabled = True
+        # bot_paused and new_entries_enabled are operator controls — intentionally NOT reset daily
 
     def sse_payload(self) -> dict:
         # Last 15 candles for NIFTY (primary display instrument)
@@ -177,9 +180,9 @@ class LiveStore:
             },
             "volume":       self.today_volume,
             "ai_status":    self.ai_status,
-            "bot_paused":   self.bot_paused,
-            "new_entries_enabled": self.new_entries_enabled,
             "feed_status":  self.feed_status,
+            "bot_paused":   self.bot_paused,
+            "new_entries":  self.new_entries_enabled,
             "today_bias":   self.premarket_bias.get("bias", "NEUTRAL"),
             "next_check":   self.next_check_time,
             "last_tick":    self.last_tick_time,

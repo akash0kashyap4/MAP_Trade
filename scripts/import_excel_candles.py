@@ -83,12 +83,12 @@ def import_excel(xlsx_path: str):
 
             o = float(row[idx_open])
             h = float(row[idx_high])
-            l = float(row[idx_low])
+            low = float(row[idx_low])
             c = float(row[idx_close])
             v = int(row[idx_volume] or 0)
 
-            records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, l, c, v, 0))
-        except Exception as e:
+            records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, low, c, v, 0))
+        except Exception:
             skipped += 1
             continue
 
@@ -114,8 +114,57 @@ def import_excel(xlsx_path: str):
     print(f"Done. Total 1-min NIFTY candles in DB: {total:,}")
 
 
+def import_csv_gz(csv_gz_path: str):
+    """Import from the bundled gzipped CSV (Date,Time,O,H,L,C,V)."""
+    import gzip
+    import csv as csv_mod
+    print(f"Reading {csv_gz_path} …")
+    records = []
+    skipped = 0
+    with gzip.open(csv_gz_path, "rt") as f:
+        reader = csv_mod.reader(f)
+        headers = next(reader)
+        print(f"Columns: {headers}")
+        for row in reader:
+            try:
+                date_val, time_val = row[0].strip(), row[1].strip()
+                ts = f"{date_val}T{time_val}+05:30"
+                o, h, low, c = float(row[2]), float(row[3]), float(row[4]), float(row[5])
+                v = int(float(row[6] or 0))
+                records.append((INSTRUMENT_KEY, INTERVAL, ts, o, h, low, c, v, 0))
+            except Exception:
+                skipped += 1
+    print(f"Parsed {len(records):,} candles ({skipped} skipped)")
+    with sqlite3.connect(DB_PATH) as conn:
+        _ensure_table(conn)
+        conn.executemany(
+            "INSERT OR IGNORE INTO candles "
+            "(instrument, interval, timestamp, open, high, low, close, volume, oi) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            records,
+        )
+        conn.commit()
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM candles WHERE instrument=? AND interval=?",
+            (INSTRUMENT_KEY, INTERVAL)
+        )
+        total = cur.fetchone()[0]
+    print(f"Done. Total 1-min NIFTY candles in DB: {total:,}")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python3 scripts/import_excel_candles.py /path/to/nifty_1y_1min.xlsx")
+    # Auto-import bundled CSV if no arg given
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    default_csv = os.path.join(base, "data", "nifty_1min.csv.gz")
+
+    if len(sys.argv) >= 2:
+        path = sys.argv[1]
+        if path.endswith(".xlsx") or path.endswith(".xls"):
+            import_excel(path)
+        else:
+            import_csv_gz(path)
+    elif os.path.exists(default_csv):
+        import_csv_gz(default_csv)
+    else:
+        print("Usage: python3 scripts/import_excel_candles.py [file.xlsx | file.csv.gz]")
         sys.exit(1)
-    import_excel(sys.argv[1])

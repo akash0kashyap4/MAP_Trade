@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
 
 import pytz
 
@@ -18,14 +17,12 @@ try:
 except Exception:
     _YF_SESSION = None
 
-from config import TRADING, INSTRUMENTS, LOT_SIZES, INITIAL_CAPITAL
+from config import TRADING, INSTRUMENTS
 from bot.order_executor import OrderExecutor
-
-_executor = OrderExecutor()  # one instance for the session
 from data.store import store
 from data import database as db
-from bot.risk import calc_quantity, calc_sl_price, calc_target_price, calc_trailing_sl, max_positions_reached
-from bot.strategy import build_market_context, is_valid_trade_time
+from bot.risk import calc_quantity
+from bot.strategy import build_market_context
 from bot.decision_log import DecisionLog
 from bot.fees import apply_slippage, realistic_pnl
 from groww.historical import (
@@ -33,7 +30,9 @@ from groww.historical import (
     get_india_vix, get_option_chain_analytics,
 )
 from groww.quotes import fetch_option_ltps
-from groww.live_feed import start_feed, request_option_subscribe
+from groww.live_feed import request_option_subscribe
+
+_executor = OrderExecutor()  # one instance for the session
 
 IST = pytz.timezone("Asia/Kolkata")
 _telegram_enabled = False
@@ -80,7 +79,7 @@ async def _fetch_global_cues() -> dict:
     }
     if not _YF_OK:
         return result
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         # Run all yfinance calls concurrently in threads (they're blocking HTTP)
         symbols = {
@@ -104,7 +103,8 @@ async def _fetch_global_cues() -> dict:
         result["india_vix"], _   = vals["vix"]
         # prev-day close for indices = value at index -2 in 5d history
         try:
-            _mk = lambda s: yf.Ticker(s, session=_YF_SESSION) if _YF_SESSION else yf.Ticker(s)
+            def _mk(s):
+                return yf.Ticker(s, session=_YF_SESSION) if _YF_SESSION else yf.Ticker(s)
             nh = _mk("^NSEI").history(period="5d")
             bh = _mk("^NSEBANK").history(period="5d")
             result["prev_nifty"]     = round(float(nh["Close"].iloc[-2]), 2) if len(nh) >= 2 else "N/A"
@@ -128,12 +128,12 @@ class LiveTrader:
     async def premarket_analysis(self):
         if store.bot_paused:
             print("[trader] premarket skipped - bot is paused")
-            store.ai_status = "waiting"
+            store.ai_status = "paused"
             return
         store.ai_status = "analyzing"
         global_data = await _fetch_global_cues()
         # Fetch India VIX via Upstox (more reliable than yfinance)
-        vix = await asyncio.get_event_loop().run_in_executor(None, get_india_vix)
+        vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
         if vix and vix > 0:
             global_data["india_vix"] = vix
             store.india_vix = vix
@@ -155,7 +155,7 @@ class LiveTrader:
 
     async def market_loop_tick(self):
         if store.bot_paused:
-            store.ai_status = "waiting"
+            store.ai_status = "paused"
             return
         if not self._market_open:
             # Auto-enable if we're within market hours (bot started late)
@@ -169,6 +169,11 @@ class LiveTrader:
         time_str = now.strftime("%H:%M")
         next_tick = now.replace(second=0, microsecond=0) + timedelta(minutes=5)
         store.next_check_time = next_tick.strftime("%H:%M")
+
+        # Manual override — operator paused the bot from dashboard
+        if store.bot_paused:
+            store.ai_status = "waiting"
+            return
 
         store.ai_status = "analyzing"
         store.last_tick_time = now.strftime("%H:%M:%S")
@@ -185,14 +190,14 @@ class LiveTrader:
             return
 
         # Refresh India VIX every tick
-        vix = await asyncio.get_event_loop().run_in_executor(None, get_india_vix)
+        vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
         if vix and vix > 0:
             store.india_vix = vix
 
         try:
             # Refresh option LTPs for all open positions
             if store.positions:
-                ltps = await asyncio.get_event_loop().run_in_executor(
+                ltps = await asyncio.get_running_loop().run_in_executor(
                     None, fetch_option_ltps, store.positions
                 )
                 for pos in store.positions:
@@ -294,9 +299,6 @@ class LiveTrader:
 
         step       = 100 if instrument == "SENSEX" else 50
         atm_strike = round_to_atm(spot_price, step)
-
-        h, m = map(int, time_str.split(":"))
-        current_mins = h * 60 + m
         current_vix = getattr(store, "india_vix", 0)
 
         # Detect expiry day (Nifty=Thu, BankNifty=Wed, Sensex=Fri) — info only, AI decides
@@ -306,8 +308,6 @@ class LiveTrader:
         is_expiry_day = weekday == _expiry_weekdays.get(instrument, 3)
 
         # Fetch option chain analytics (PCR, IV, OI, max pain) for current nearest expiry
-        # Nearest expiry is found inside get_option_chain_analytics via Groww API
-        step = 100 if instrument == "SENSEX" else 50
         _today_str = date_str
         _expiry_cache_key = f"{instrument}_{_today_str}"
         nearest_expiry = self._expiries_cache.get(_expiry_cache_key)
@@ -337,7 +337,7 @@ class LiveTrader:
 
         chain_analytics = {}
         if nearest_expiry:
-            chain_analytics = await asyncio.get_event_loop().run_in_executor(
+            chain_analytics = await asyncio.get_running_loop().run_in_executor(
                 None, get_option_chain_analytics, instrument_key, spot_price, nearest_expiry, step
             )
 
@@ -406,6 +406,12 @@ class LiveTrader:
         })
 
         action = decision.get("action")
+        if action in ("BUY_CE", "BUY_PE") and not store.new_entries_enabled:
+            log.guard_block("NewEntriesDisabled", "new entries blocked by operator override")
+            log.finalize("SKIP", "new_entries_disabled")
+            self._log_skip(instrument, "New entries disabled by operator", time_str, log)
+            return
+
         if action in ("BUY_CE", "BUY_PE"):
             if not store.new_entries_enabled:
                 log.guard_block("NewEntries", "new entries are currently disabled")
@@ -415,7 +421,7 @@ class LiveTrader:
             option_type = "CE" if action == "BUY_CE" else "PE"
             step = 100 if instrument == "SENSEX" else 50
 
-            opt_data = await asyncio.get_event_loop().run_in_executor(
+            opt_data = await asyncio.get_running_loop().run_in_executor(
                 None, get_live_option_from_chain, instrument_key, spot_price, option_type, step
             )
             if not opt_data:
@@ -639,7 +645,7 @@ class LiveTrader:
             if not store.positions:
                 continue
             try:
-                ltps = await asyncio.get_event_loop().run_in_executor(
+                ltps = await asyncio.get_running_loop().run_in_executor(
                     None, fetch_option_ltps, store.positions
                 )
                 for pos in list(store.positions):

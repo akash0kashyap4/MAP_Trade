@@ -90,8 +90,10 @@ def first_candle_init(candles_1min: list, prev_close: float = 0) -> dict:
     if orb:
         c = orb[0]
         o, cl = float(c[1]), float(c[4])
-        if cl > o:   bias = "BUY_CE"
-        elif cl < o: bias = "BUY_PE"
+        if cl > o:
+            bias = "BUY_CE"
+        elif cl < o:
+            bias = "BUY_PE"
     return {"bias": bias, "last_exit_direction": None, "last_exit_time": ""}
 
 
@@ -259,8 +261,10 @@ def gap_direction_init(candles_1min: list, prev_close: float = 0) -> dict:
     if candles_1min and prev_close > 0:
         open_price = float(candles_1min[0][1])
         gap_pct = (open_price - prev_close) / prev_close * 100
-        if gap_pct > 0.3:   bias = "BUY_CE"
-        elif gap_pct < -0.3: bias = "BUY_PE"
+        if gap_pct > 0.3:
+            bias = "BUY_CE"
+        elif gap_pct < -0.3:
+            bias = "BUY_PE"
     return {"bias": bias, "last_exit_direction": None, "last_exit_time": ""}
 
 

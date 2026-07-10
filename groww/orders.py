@@ -4,7 +4,7 @@ from groww.auth import get_groww_client
 def place_market_order(trading_symbol: str, quantity: int, transaction_type: str) -> str:
     groww = get_groww_client()
     t_type = groww.TRANSACTION_TYPE_BUY if transaction_type.upper() == 'BUY' else groww.TRANSACTION_TYPE_SELL
-    
+
     try:
         print(f"[groww.orders] Placing MARKET {transaction_type} order for {trading_symbol}")
         order_id = groww.place_order(

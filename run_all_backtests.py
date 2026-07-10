@@ -1,8 +1,9 @@
-import sys, os
+import sys
+import os
+from backtest.engine import BacktestEngine
+
 sys.stdout.reconfigure(encoding='utf-8')
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-
-from backtest.engine import BacktestEngine
 
 strategies = ['first_candle', 'orb15', 'rsi_reversal', 'ema_trend', 'gap_direction']
 results = []

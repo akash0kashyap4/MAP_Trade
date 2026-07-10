@@ -16,9 +16,7 @@ Symbol format for options:
 Scrip master: https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json
 """
 from __future__ import annotations
-import json
 import requests
-from SmartApi.smartExceptions import DataException
 from angelone.auth import get_angel_client
 
 SCRIP_MASTER_URL = (

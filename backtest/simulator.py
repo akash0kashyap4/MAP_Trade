@@ -48,7 +48,7 @@ def simulate_trade(
     trailing_trigger_pts = tgt_pts * trailing_sl_trigger
 
     for idx, candle in enumerate(candles_after_entry):
-        _, o, h, l, c = candle[0], candle[1], candle[2], candle[3], candle[4]
+        _, _, h, candle_low, _ = candle[0], candle[1], candle[2], candle[3], candle[4]
 
         if h > highest_price:
             highest_price = h
@@ -62,7 +62,7 @@ def simulate_trade(
             if new_sl > current_sl:
                 current_sl = new_sl
 
-        if l <= current_sl:
+        if candle_low <= current_sl:
             exit_price  = current_sl
             exit_reason = "SL"
             pnl_raw     = (exit_price - actual_entry) * quantity
@@ -79,8 +79,8 @@ def simulate_trade(
     last = candles_after_entry[-1]
     exit_price  = float(last[4])
     exit_reason = "EOD"
-    pnl_raw     = (exit_price - actual_entry) * quantity
-    pnl_final   = pnl_raw - _brokerage(actual_entry, exit_price, quantity)
+    pnl_raw     = round((exit_price - actual_entry) * quantity, 2)
+    pnl_final   = round(pnl_raw - _brokerage(actual_entry, exit_price, quantity), 2)
     return TradeResult(actual_entry, exit_price, exit_reason, quantity, pnl_raw, pnl_final, 0, len(candles_after_entry) - 1)
 
 
