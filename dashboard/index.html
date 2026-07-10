@@ -767,57 +767,121 @@
       <div class="panel-title">AI BRAIN — RAGI</div>
       <div class="panel-body">
 
-        <!-- Confidence Arc -->
-        <div class="conf-arc-wrap">
-          <svg class="brain-icon" viewBox="0 0 70 70" width="68" height="68" style="flex-shrink:0;filter:drop-shadow(0 0 8px rgba(0,212,255,.5))">
+        <!-- AI Brain SVG -->
+        <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:8px">
+          <svg viewBox="0 0 160 160" width="150" height="150" style="overflow:visible">
             <defs>
-              <radialGradient id="brainGrad" cx="50%" cy="38%" r="60%">
-                <stop offset="0%"  stop-color="#00d4ff" stop-opacity=".95"/>
-                <stop offset="55%" stop-color="#9b59b6" stop-opacity=".8"/>
-                <stop offset="100%" stop-color="#9b59b6" stop-opacity=".35"/>
+              <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#00eaff" stop-opacity="0.15"/>
+                <stop offset="100%" stop-color="#000" stop-opacity="0"/>
               </radialGradient>
-              <filter id="brainGlow" x="-30%" y="-30%" width="160%" height="160%">
-                <feGaussianBlur stdDeviation="2.5" result="blur"/>
+              <radialGradient id="brainFill" cx="50%" cy="40%" r="55%">
+                <stop offset="0%" stop-color="#00ffff"/>
+                <stop offset="60%" stop-color="#00b4d8"/>
+                <stop offset="100%" stop-color="#0077a8"/>
+              </radialGradient>
+              <filter id="glow2">
+                <feGaussianBlur stdDeviation="3" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="softglow">
+                <feGaussianBlur stdDeviation="5" result="blur"/>
                 <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
             </defs>
-            <g filter="url(#brainGlow)" fill="url(#brainGrad)" stroke="#00d4ff" stroke-width="0.6" stroke-opacity="0.6">
-              <!-- Left hemisphere -->
-              <path d="M35 12 C24 12 15 19 13 28 C11 34 13 40 17 44 C15 47 15 52 18 55 C21 58 25 58 28 56 C30 58 32 59 35 59 L35 12Z"/>
-              <!-- Right hemisphere -->
-              <path d="M35 12 C46 12 55 19 57 28 C59 34 57 40 53 44 C55 47 55 52 52 55 C49 58 45 58 42 56 C40 58 38 59 35 59 L35 12Z"/>
-              <!-- Center fold -->
-              <line x1="35" y1="13" x2="35" y2="58" stroke="#00d4ff" stroke-width="0.8" stroke-opacity="0.4"/>
-              <!-- Left folds -->
-              <path d="M20 26 Q26 22 28 28 Q24 32 20 30" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <path d="M16 38 Q22 34 25 40 Q20 44 16 42" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <path d="M19 50 Q25 47 27 52" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <!-- Right folds -->
-              <path d="M50 26 Q44 22 42 28 Q46 32 50 30" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <path d="M54 38 Q48 34 45 40 Q50 44 54 42" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <path d="M51 50 Q45 47 43 52" fill="none" stroke="#00d4ff" stroke-width="0.9"/>
-              <!-- Stem -->
-              <rect x="33" y="58" width="4" height="5" rx="2" fill="#9b59b6" stroke="none"/>
+
+            <!-- Background glow -->
+            <ellipse cx="80" cy="120" rx="55" ry="10" fill="#00d4ff" opacity="0.08"/>
+
+            <!-- Concentric rings -->
+            <g opacity="0.5" filter="url(#softglow)">
+              <ellipse cx="80" cy="122" rx="52" ry="10" fill="none" stroke="#00d4ff" stroke-width="0.8" stroke-dasharray="3,4"/>
+              <ellipse cx="80" cy="122" rx="42" ry="8"  fill="none" stroke="#00d4ff" stroke-width="1"   stroke-dasharray="2,3"/>
+              <ellipse cx="80" cy="122" rx="30" ry="6"  fill="none" stroke="#00eaff" stroke-width="1.2"/>
+              <ellipse cx="80" cy="122" rx="18" ry="4"  fill="none" stroke="#00eaff" stroke-width="1.5"/>
             </g>
-            <!-- Animated neural dots -->
-            <circle r="2" fill="#00d4ff" opacity="0.9"><animateMotion dur="3s" repeatCount="indefinite" path="M20,30 Q35,20 50,30 Q35,40 20,30"/></circle>
-            <circle r="1.5" fill="#fff" opacity="0.7"><animateMotion dur="4s" repeatCount="indefinite" begin="1s" path="M18,42 Q35,35 52,42 Q35,50 18,42"/></circle>
-            <circle r="1.5" fill="#9b59b6" opacity="0.9"><animateMotion dur="2.5s" repeatCount="indefinite" begin="0.5s" path="M25,52 Q35,47 45,52 Q35,57 25,52"/></circle>
+
+            <!-- Chip/base -->
+            <rect x="66" y="112" width="28" height="16" rx="2" fill="#0a1628" stroke="#00d4ff" stroke-width="1.2" filter="url(#glow2)"/>
+            <rect x="70" y="115" width="20" height="10" rx="1" fill="#001a33" stroke="#00b4d8" stroke-width="0.6"/>
+            <line x1="66" y1="118" x2="62" y2="118" stroke="#00d4ff" stroke-width="0.8"/><line x1="66" y1="121" x2="62" y2="121" stroke="#00d4ff" stroke-width="0.8"/>
+            <line x1="94" y1="118" x2="98" y2="118" stroke="#00d4ff" stroke-width="0.8"/><line x1="94" y1="121" x2="98" y2="121" stroke="#00d4ff" stroke-width="0.8"/>
+            <line x1="72" y1="112" x2="72" y2="108" stroke="#00d4ff" stroke-width="0.8"/><line x1="78" y1="112" x2="78" y2="108" stroke="#00d4ff" stroke-width="0.8"/>
+            <line x1="84" y1="112" x2="84" y2="108" stroke="#00d4ff" stroke-width="0.8"/><line x1="90" y1="112" x2="90" y2="108" stroke="#00d4ff" stroke-width="0.8"/>
+
+            <!-- Neural wire connections brain→chip -->
+            <g stroke="#00d4ff" stroke-width="0.9" fill="none" opacity="0.7">
+              <path d="M72,88 C70,98 71,104 73,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite"/></path>
+              <path d="M76,90 C75,100 75,106 76,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2.5s" begin="0.3s" repeatCount="indefinite"/></path>
+              <path d="M80,91 C80,101 80,107 80,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="1.8s" begin="0.6s" repeatCount="indefinite"/></path>
+              <path d="M84,90 C85,100 85,106 84,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2.2s" begin="0.9s" repeatCount="indefinite"/></path>
+              <path d="M88,88 C90,98 89,104 87,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2s" begin="1.2s" repeatCount="indefinite"/></path>
+            </g>
+
+            <!-- Brain hemispheres -->
+            <g filter="url(#glow2)">
+              <!-- Left hemisphere -->
+              <path d="M80,22 C66,22 54,30 50,42 C47,51 49,60 54,66 C51,70 50,76 53,81 C56,86 62,87 67,85 C70,88 74,90 80,90 L80,22Z"
+                fill="url(#brainFill)" stroke="#00eaff" stroke-width="0.8"/>
+              <!-- Right hemisphere -->
+              <path d="M80,22 C94,22 106,30 110,42 C113,51 111,60 106,66 C109,70 110,76 107,81 C104,86 98,87 93,85 C90,88 86,90 80,90 L80,22Z"
+                fill="url(#brainFill)" stroke="#00eaff" stroke-width="0.8"/>
+              <!-- Center line -->
+              <line x1="80" y1="23" x2="80" y2="89" stroke="#001a33" stroke-width="1.5"/>
+
+              <!-- Left folds -->
+              <path d="M57,38 Q64,33 67,40 Q62,45 57,43" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
+              <path d="M52,52 Q59,47 63,54 Q57,59 52,57" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
+              <path d="M53,66 Q60,62 63,68 Q58,72 53,70" fill="none" stroke="#00eaff" stroke-width="1"   stroke-opacity="0.7"/>
+              <path d="M58,78 Q65,75 67,80" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
+              <path d="M63,30 Q70,26 73,33" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.6"/>
+
+              <!-- Right folds -->
+              <path d="M103,38 Q96,33 93,40 Q98,45 103,43" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
+              <path d="M108,52 Q101,47 97,54 Q103,59 108,57" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
+              <path d="M107,66 Q100,62 97,68 Q102,72 107,70" fill="none" stroke="#00eaff" stroke-width="1"   stroke-opacity="0.7"/>
+              <path d="M102,78 Q95,75 93,80" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
+              <path d="M97,30 Q90,26 87,33" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.6"/>
+            </g>
+
+            <!-- Floating dots around brain -->
+            <g fill="#00d4ff">
+              <circle cx="38" cy="45" r="2.5" opacity="0.8"><animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/></circle>
+              <circle cx="32" cy="65" r="1.8" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s" begin="0.5s" repeatCount="indefinite"/></circle>
+              <circle cx="42" cy="85" r="2"   opacity="0.7"><animate attributeName="opacity" values="0.3;1;0.3" dur="2.5s" begin="1s" repeatCount="indefinite"/></circle>
+              <circle cx="122" cy="45" r="2.5" opacity="0.8"><animate attributeName="opacity" values="0.3;1;0.3" dur="2.2s" begin="0.3s" repeatCount="indefinite"/></circle>
+              <circle cx="128" cy="68" r="1.8" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s" begin="0.8s" repeatCount="indefinite"/></circle>
+              <circle cx="118" cy="88" r="2"   opacity="0.7"><animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="1.5s" repeatCount="indefinite"/></circle>
+              <circle cx="58" cy="18" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.2;0.7;0.2" dur="4s" begin="0.2s" repeatCount="indefinite"/></circle>
+              <circle cx="105" cy="16" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.2;0.7;0.2" dur="3.5s" begin="1s" repeatCount="indefinite"/></circle>
+              <!-- Ring dots -->
+              <circle cx="30"  cy="122" r="2" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" repeatCount="indefinite"/></circle>
+              <circle cx="130" cy="122" r="2" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" begin="1s" repeatCount="indefinite"/></circle>
+              <circle cx="40"  cy="130" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3s" begin="0.5s" repeatCount="indefinite"/></circle>
+              <circle cx="120" cy="130" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3s" begin="1.5s" repeatCount="indefinite"/></circle>
+            </g>
+
+            <!-- AI Usage % in center of chip -->
+            <text x="80" y="122" text-anchor="middle" font-family="monospace" font-size="7" font-weight="bold" fill="#00eaff" id="brain-pct">0%</text>
           </svg>
-          <svg id="conf-svg" width="70" height="70" viewBox="0 0 70 70">
-            <circle cx="35" cy="35" r="28" fill="none" stroke="#1a1a2e" stroke-width="6"/>
-            <circle cx="35" cy="35" r="28" fill="none" stroke="#00d4ff" stroke-width="6"
-              stroke-dasharray="175.93" stroke-dashoffset="175.93"
-              stroke-linecap="round"
-              transform="rotate(-90 35 35)"
-              id="conf-arc"/>
-            <text x="35" y="39" text-anchor="middle" font-family="IBM Plex Mono" font-size="16"
-              font-weight="600" fill="#e8e8e0" id="conf-num">0</text>
-          </svg>
-          <div>
-            <div class="conf-label">CONFIDENCE</div>
-            <div class="conf-action" id="conf-action">──────</div>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:2px" id="conf-instrument">──</div>
+
+          <!-- Confidence Arc below brain -->
+          <div class="conf-arc-wrap" style="margin-bottom:0">
+            <svg id="conf-svg" width="70" height="70" viewBox="0 0 70 70">
+              <circle cx="35" cy="35" r="28" fill="none" stroke="#1a1a2e" stroke-width="6"/>
+              <circle cx="35" cy="35" r="28" fill="none" stroke="#00d4ff" stroke-width="6"
+                stroke-dasharray="175.93" stroke-dashoffset="175.93"
+                stroke-linecap="round"
+                transform="rotate(-90 35 35)"
+                id="conf-arc"/>
+              <text x="35" y="39" text-anchor="middle" font-family="IBM Plex Mono" font-size="16"
+                font-weight="600" fill="#e8e8e0" id="conf-num">0</text>
+            </svg>
+            <div>
+              <div class="conf-label">CONFIDENCE</div>
+              <div class="conf-action" id="conf-action">──────</div>
+              <div style="font-size:10px;color:var(--text-dim);margin-top:2px" id="conf-instrument">──</div>
+            </div>
           </div>
         </div>
         <div class="conf-reason" id="conf-reason">Waiting for market data…</div>
@@ -1207,6 +1271,8 @@ function updateConfArc(signal) {
 
   document.getElementById('conf-arc').setAttribute('stroke-dashoffset', offset);
   document.getElementById('conf-num').textContent = c;
+  const pctEl = document.getElementById('brain-pct');
+  if (pctEl) pctEl.textContent = (c * 10) + '%';
 
   const arcColor = c >= 8 ? 'var(--green)' : c >= 6 ? 'var(--cyan)' : c >= 4 ? 'var(--amber)' : 'var(--red)';
   document.getElementById('conf-arc').setAttribute('stroke', arcColor);
