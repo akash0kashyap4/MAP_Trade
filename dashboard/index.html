@@ -1542,7 +1542,7 @@ setInterval(loadRules, 60000);
 loadRules();
 
 // ── SETTINGS / RISK CONFIG ──
-async function loadRiskConfig() {
+async function loadRiskConfig_unused() {
   try {
     const res = await fetch('/api/config/risk');
     const data = await res.json();
@@ -1968,17 +1968,23 @@ async function loadRiskConfig() {
     _newEntries = d.new_entries_enabled;
     _updateOverrideBtns();
 
-    const grid = document.getElementById('risk-grid');
+    const grid = document.getElementById('risk-config-grid');
     if (!grid) return;
     const rows = [
       ['Paper Trade',       d.paper_trade ? 'YES' : 'LIVE', d.paper_trade ? 'var(--amber)' : 'var(--red)'],
       ['Lots',              d.lots,                          'var(--cyan)'],
       ['Max Positions',     d.max_positions,                 'var(--text)'],
-      ['Max Daily Loss',    `₹${(d.max_daily_loss||0).toLocaleString()}`, 'var(--red)'],
+      ['Max Daily Loss',    `\u20b9${(d.max_daily_loss||0).toLocaleString()}`, 'var(--red)'],
       ['SL Pct (fallback)', `${((d.fallback_sl_pct||0)*100).toFixed(0)}%`, 'var(--amber)'],
       ['Target Pct (fb)',   `${((d.fallback_target_pct||0)*100).toFixed(0)}%`, 'var(--green)'],
+      ['Stop Loss Rs',      `\u20b9${d.stop_loss_rs ?? 0}`,       'var(--amber)'],
+      ['Target Rs',         `\u20b9${d.target_rs ?? 0}`,          'var(--green)'],
+      ['Min Confidence',    d.min_confidence,                'var(--text)'],
       ['Trail Trigger',     `${((d.trailing_sl_trigger||0)*100).toFixed(0)}%`, 'var(--cyan)'],
       ['Trail Step',        `${((d.trailing_sl_step||0)*100).toFixed(0)}%`,    'var(--cyan)'],
+      ['Bot Paused',        d.bot_paused ? 'YES' : 'NO',     d.bot_paused ? 'var(--red)' : 'var(--green)'],
+      ['New Entries',       d.new_entries_enabled ? 'YES' : 'NO', d.new_entries_enabled ? 'var(--green)' : 'var(--red)'],
+      ['Initial Capital',   `\u20b9${(d.initial_capital||0).toLocaleString()}`, 'var(--green)'],
     ];
     grid.innerHTML = rows.map(([label, val, color]) => `
       <div style="background:var(--bg3);border:1px solid var(--grid);border-radius:3px;padding:7px 10px">
