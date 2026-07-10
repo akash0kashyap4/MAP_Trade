@@ -715,8 +715,8 @@
         <div class="section-label" style="margin-bottom:6px">BACKTEST</div>
         <div class="bt-row">
           <input class="bt-input" id="bt-instrument" value="NIFTY" placeholder="NIFTY" style="width:70px">
-          <input class="bt-input" id="bt-start" value="2025-01-01" placeholder="start" style="width:90px">
-          <input class="bt-input" id="bt-end" value="2025-05-30" placeholder="end" style="width:90px">
+          <input class="bt-input" id="bt-start" value="2026-07-01" placeholder="start" style="width:90px">
+          <input class="bt-input" id="bt-end" value="2026-07-10" placeholder="end" style="width:90px">
           <button class="bt-btn" id="bt-run-btn" onclick="runBacktest()">▶ RUN</button>
           <button class="bt-btn" id="bt-runall-btn" onclick="runAllStrategies()" style="background:var(--cyan);color:var(--bg)">⚡ ALL</button>
           <button class="bt-btn" id="bt-runai-btn" onclick="runAiOnly()" style="display:none;background:#ffc800;color:#000;font-weight:700">🤖 AI ONLY</button>
@@ -769,100 +769,131 @@
 
         <!-- AI Brain SVG -->
         <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:8px">
-          <svg viewBox="0 0 160 160" width="150" height="150" style="overflow:visible">
+          <svg viewBox="0 0 160 170" width="155" height="155" style="overflow:visible">
             <defs>
-              <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stop-color="#00eaff" stop-opacity="0.15"/>
-                <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+              <radialGradient id="brainFill" cx="45%" cy="35%" r="60%">
+                <stop offset="0%"   stop-color="#80ffff"/>
+                <stop offset="35%"  stop-color="#00d4ff"/>
+                <stop offset="70%"  stop-color="#0095b8"/>
+                <stop offset="100%" stop-color="#005580"/>
               </radialGradient>
-              <radialGradient id="brainFill" cx="50%" cy="40%" r="55%">
-                <stop offset="0%" stop-color="#00ffff"/>
-                <stop offset="60%" stop-color="#00b4d8"/>
-                <stop offset="100%" stop-color="#0077a8"/>
+              <radialGradient id="brainFillR" cx="55%" cy="35%" r="60%">
+                <stop offset="0%"   stop-color="#80ffff"/>
+                <stop offset="35%"  stop-color="#00d4ff"/>
+                <stop offset="70%"  stop-color="#0095b8"/>
+                <stop offset="100%" stop-color="#005580"/>
               </radialGradient>
-              <filter id="glow2">
+              <radialGradient id="chipGrad" cx="50%" cy="30%" r="70%">
+                <stop offset="0%" stop-color="#003355"/>
+                <stop offset="100%" stop-color="#000d1a"/>
+              </radialGradient>
+              <filter id="brainGlow">
+                <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+              <filter id="ringGlow">
                 <feGaussianBlur stdDeviation="3" result="blur"/>
                 <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
               </filter>
-              <filter id="softglow">
-                <feGaussianBlur stdDeviation="5" result="blur"/>
-                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-              </filter>
+              <clipPath id="leftClip"><rect x="0" y="0" width="80" height="160"/></clipPath>
+              <clipPath id="rightClip"><rect x="80" y="0" width="80" height="160"/></clipPath>
             </defs>
 
-            <!-- Background glow -->
-            <ellipse cx="80" cy="120" rx="55" ry="10" fill="#00d4ff" opacity="0.08"/>
+            <!-- Outer ambient glow -->
+            <ellipse cx="80" cy="75" rx="58" ry="55" fill="#00d4ff" opacity="0.04"/>
 
-            <!-- Concentric rings -->
-            <g opacity="0.5" filter="url(#softglow)">
-              <ellipse cx="80" cy="122" rx="52" ry="10" fill="none" stroke="#00d4ff" stroke-width="0.8" stroke-dasharray="3,4"/>
-              <ellipse cx="80" cy="122" rx="42" ry="8"  fill="none" stroke="#00d4ff" stroke-width="1"   stroke-dasharray="2,3"/>
-              <ellipse cx="80" cy="122" rx="30" ry="6"  fill="none" stroke="#00eaff" stroke-width="1.2"/>
-              <ellipse cx="80" cy="122" rx="18" ry="4"  fill="none" stroke="#00eaff" stroke-width="1.5"/>
+            <!-- ── LEFT HEMISPHERE ── -->
+            <g clip-path="url(#leftClip)" filter="url(#brainGlow)">
+              <!-- Main body -->
+              <path d="M80,18 C72,18 61,22 54,30 C46,39 44,50 46,60 C43,66 42,74 45,80 C48,87 55,91 62,90 C67,93 73,96 80,96 Z"
+                fill="url(#brainFill)" stroke="#00eaff" stroke-width="1.2"/>
+              <!-- Gyri (brain folds) — prominent S-curves -->
+              <path d="M61,27 C57,31 58,36 63,37 C68,38 70,33 67,29" fill="#00c8f0" stroke="#00eaff" stroke-width="1.4" stroke-opacity="0.9"/>
+              <path d="M53,41 C49,46 50,52 56,53 C62,54 64,48 60,43" fill="#00c8f0" stroke="#00eaff" stroke-width="1.4" stroke-opacity="0.9"/>
+              <path d="M72,23 C69,28 70,33 75,34 C79,34 80,30 78,26" fill="#00c8f0" stroke="#00eaff" stroke-width="1.2" stroke-opacity="0.8"/>
+              <path d="M46,57 C43,63 44,70 50,71 C56,72 58,65 54,59" fill="#00c8f0" stroke="#00eaff" stroke-width="1.3" stroke-opacity="0.85"/>
+              <path d="M55,73 C51,77 52,83 57,84 C63,85 65,79 61,74" fill="#00c8f0" stroke="#00eaff" stroke-width="1.2" stroke-opacity="0.8"/>
+              <path d="M67,82 C64,86 65,91 70,91 C75,91 76,86 73,82" fill="#00c8f0" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
             </g>
 
-            <!-- Chip/base -->
-            <rect x="66" y="112" width="28" height="16" rx="2" fill="#0a1628" stroke="#00d4ff" stroke-width="1.2" filter="url(#glow2)"/>
-            <rect x="70" y="115" width="20" height="10" rx="1" fill="#001a33" stroke="#00b4d8" stroke-width="0.6"/>
-            <line x1="66" y1="118" x2="62" y2="118" stroke="#00d4ff" stroke-width="0.8"/><line x1="66" y1="121" x2="62" y2="121" stroke="#00d4ff" stroke-width="0.8"/>
-            <line x1="94" y1="118" x2="98" y2="118" stroke="#00d4ff" stroke-width="0.8"/><line x1="94" y1="121" x2="98" y2="121" stroke="#00d4ff" stroke-width="0.8"/>
-            <line x1="72" y1="112" x2="72" y2="108" stroke="#00d4ff" stroke-width="0.8"/><line x1="78" y1="112" x2="78" y2="108" stroke="#00d4ff" stroke-width="0.8"/>
-            <line x1="84" y1="112" x2="84" y2="108" stroke="#00d4ff" stroke-width="0.8"/><line x1="90" y1="112" x2="90" y2="108" stroke="#00d4ff" stroke-width="0.8"/>
-
-            <!-- Neural wire connections brain→chip -->
-            <g stroke="#00d4ff" stroke-width="0.9" fill="none" opacity="0.7">
-              <path d="M72,88 C70,98 71,104 73,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite"/></path>
-              <path d="M76,90 C75,100 75,106 76,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2.5s" begin="0.3s" repeatCount="indefinite"/></path>
-              <path d="M80,91 C80,101 80,107 80,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="1.8s" begin="0.6s" repeatCount="indefinite"/></path>
-              <path d="M84,90 C85,100 85,106 84,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2.2s" begin="0.9s" repeatCount="indefinite"/></path>
-              <path d="M88,88 C90,98 89,104 87,112"><animate attributeName="stroke-opacity" values="0.4;1;0.4" dur="2s" begin="1.2s" repeatCount="indefinite"/></path>
+            <!-- ── RIGHT HEMISPHERE ── -->
+            <g clip-path="url(#rightClip)" filter="url(#brainGlow)">
+              <!-- Main body -->
+              <path d="M80,18 C88,18 99,22 106,30 C114,39 116,50 114,60 C117,66 118,74 115,80 C112,87 105,91 98,90 C93,93 87,96 80,96 Z"
+                fill="url(#brainFillR)" stroke="#00eaff" stroke-width="1.2"/>
+              <!-- Gyri mirror -->
+              <path d="M99,27 C103,31 102,36 97,37 C92,38 90,33 93,29" fill="#00c8f0" stroke="#00eaff" stroke-width="1.4" stroke-opacity="0.9"/>
+              <path d="M107,41 C111,46 110,52 104,53 C98,54 96,48 100,43" fill="#00c8f0" stroke="#00eaff" stroke-width="1.4" stroke-opacity="0.9"/>
+              <path d="M88,23 C91,28 90,33 85,34 C81,34 80,30 82,26" fill="#00c8f0" stroke="#00eaff" stroke-width="1.2" stroke-opacity="0.8"/>
+              <path d="M114,57 C117,63 116,70 110,71 C104,72 102,65 106,59" fill="#00c8f0" stroke="#00eaff" stroke-width="1.3" stroke-opacity="0.85"/>
+              <path d="M105,73 C109,77 108,83 103,84 C97,85 95,79 99,74" fill="#00c8f0" stroke="#00eaff" stroke-width="1.2" stroke-opacity="0.8"/>
+              <path d="M93,82 C96,86 95,91 90,91 C85,91 84,86 87,82" fill="#00c8f0" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
             </g>
 
-            <!-- Brain hemispheres -->
-            <g filter="url(#glow2)">
-              <!-- Left hemisphere -->
-              <path d="M80,22 C66,22 54,30 50,42 C47,51 49,60 54,66 C51,70 50,76 53,81 C56,86 62,87 67,85 C70,88 74,90 80,90 L80,22Z"
-                fill="url(#brainFill)" stroke="#00eaff" stroke-width="0.8"/>
-              <!-- Right hemisphere -->
-              <path d="M80,22 C94,22 106,30 110,42 C113,51 111,60 106,66 C109,70 110,76 107,81 C104,86 98,87 93,85 C90,88 86,90 80,90 L80,22Z"
-                fill="url(#brainFill)" stroke="#00eaff" stroke-width="0.8"/>
-              <!-- Center line -->
-              <line x1="80" y1="23" x2="80" y2="89" stroke="#001a33" stroke-width="1.5"/>
+            <!-- Center sulcus dividing hemispheres -->
+            <line x1="80" y1="19" x2="80" y2="95" stroke="#001a2e" stroke-width="2.5"/>
+            <line x1="80" y1="19" x2="80" y2="95" stroke="#00d4ff" stroke-width="0.5" stroke-opacity="0.3"/>
 
-              <!-- Left folds -->
-              <path d="M57,38 Q64,33 67,40 Q62,45 57,43" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
-              <path d="M52,52 Q59,47 63,54 Q57,59 52,57" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
-              <path d="M53,66 Q60,62 63,68 Q58,72 53,70" fill="none" stroke="#00eaff" stroke-width="1"   stroke-opacity="0.7"/>
-              <path d="M58,78 Q65,75 67,80" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
-              <path d="M63,30 Q70,26 73,33" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.6"/>
-
-              <!-- Right folds -->
-              <path d="M103,38 Q96,33 93,40 Q98,45 103,43" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
-              <path d="M108,52 Q101,47 97,54 Q103,59 108,57" fill="none" stroke="#00eaff" stroke-width="1.1" stroke-opacity="0.8"/>
-              <path d="M107,66 Q100,62 97,68 Q102,72 107,70" fill="none" stroke="#00eaff" stroke-width="1"   stroke-opacity="0.7"/>
-              <path d="M102,78 Q95,75 93,80" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.7"/>
-              <path d="M97,30 Q90,26 87,33" fill="none" stroke="#00eaff" stroke-width="1" stroke-opacity="0.6"/>
+            <!-- Neural wires from brain to chip -->
+            <g stroke="#00d4ff" stroke-width="1" fill="none" opacity="0.75">
+              <path d="M68,94 C67,103 68,109 70,118"><animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="1.8s" repeatCount="indefinite"/></path>
+              <path d="M74,96 C73,105 73,111 74,118"><animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="2.2s" begin="0.4s" repeatCount="indefinite"/></path>
+              <path d="M80,96 C80,105 80,111 80,118"><animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="2s"   begin="0.8s" repeatCount="indefinite"/></path>
+              <path d="M86,96 C87,105 87,111 86,118"><animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="2.4s" begin="0.2s" repeatCount="indefinite"/></path>
+              <path d="M92,94 C93,103 92,109 90,118"><animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="1.9s" begin="1s"   repeatCount="indefinite"/></path>
             </g>
 
-            <!-- Floating dots around brain -->
+            <!-- ── CHIP BASE ── -->
+            <g filter="url(#brainGlow)">
+              <!-- Main chip body -->
+              <rect x="60" y="118" width="40" height="22" rx="3" fill="url(#chipGrad)" stroke="#00d4ff" stroke-width="1.5"/>
+              <!-- Inner circuit lines -->
+              <rect x="65" y="122" width="30" height="14" rx="1.5" fill="none" stroke="#00b4d8" stroke-width="0.7"/>
+              <line x1="73" y1="122" x2="73" y2="136" stroke="#004466" stroke-width="0.6"/>
+              <line x1="80" y1="122" x2="80" y2="136" stroke="#004466" stroke-width="0.6"/>
+              <line x1="87" y1="122" x2="87" y2="136" stroke="#004466" stroke-width="0.6"/>
+              <line x1="65" y1="129" x2="95" y2="129" stroke="#004466" stroke-width="0.6"/>
+              <!-- Chip pins left -->
+              <line x1="60" y1="122" x2="55" y2="122" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="60" y1="126" x2="55" y2="126" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="60" y1="130" x2="55" y2="130" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="60" y1="134" x2="55" y2="134" stroke="#00d4ff" stroke-width="1.2"/>
+              <!-- Chip pins right -->
+              <line x1="100" y1="122" x2="105" y2="122" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="100" y1="126" x2="105" y2="126" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="100" y1="130" x2="105" y2="130" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="100" y1="134" x2="105" y2="134" stroke="#00d4ff" stroke-width="1.2"/>
+              <!-- Chip pins top -->
+              <line x1="70" y1="118" x2="70" y2="113" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="77" y1="118" x2="77" y2="113" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="83" y1="118" x2="83" y2="113" stroke="#00d4ff" stroke-width="1.2"/>
+              <line x1="90" y1="118" x2="90" y2="113" stroke="#00d4ff" stroke-width="1.2"/>
+            </g>
+
+            <!-- AI Usage % on chip -->
+            <text x="80" y="131" text-anchor="middle" font-family="monospace" font-size="7.5" font-weight="bold" fill="#00eaff" id="brain-pct" letter-spacing="0.5">0%</text>
+
+            <!-- ── CONCENTRIC RINGS below chip ── -->
+            <g filter="url(#ringGlow)" opacity="0.7">
+              <ellipse cx="80" cy="148" rx="55" ry="9"  fill="none" stroke="#00d4ff" stroke-width="0.8" stroke-dasharray="4,5"/>
+              <ellipse cx="80" cy="148" rx="44" ry="7"  fill="none" stroke="#00d4ff" stroke-width="1"   stroke-dasharray="3,4"/>
+              <ellipse cx="80" cy="148" rx="32" ry="5"  fill="none" stroke="#00eaff" stroke-width="1.3"/>
+              <ellipse cx="80" cy="148" rx="20" ry="3"  fill="none" stroke="#00eaff" stroke-width="1.6"/>
+              <ellipse cx="80" cy="148" rx="10" ry="1.5" fill="#00eaff" opacity="0.4"/>
+            </g>
+
+            <!-- Floating dots -->
             <g fill="#00d4ff">
-              <circle cx="38" cy="45" r="2.5" opacity="0.8"><animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/></circle>
-              <circle cx="32" cy="65" r="1.8" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s" begin="0.5s" repeatCount="indefinite"/></circle>
-              <circle cx="42" cy="85" r="2"   opacity="0.7"><animate attributeName="opacity" values="0.3;1;0.3" dur="2.5s" begin="1s" repeatCount="indefinite"/></circle>
-              <circle cx="122" cy="45" r="2.5" opacity="0.8"><animate attributeName="opacity" values="0.3;1;0.3" dur="2.2s" begin="0.3s" repeatCount="indefinite"/></circle>
-              <circle cx="128" cy="68" r="1.8" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s" begin="0.8s" repeatCount="indefinite"/></circle>
-              <circle cx="118" cy="88" r="2"   opacity="0.7"><animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="1.5s" repeatCount="indefinite"/></circle>
-              <circle cx="58" cy="18" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.2;0.7;0.2" dur="4s" begin="0.2s" repeatCount="indefinite"/></circle>
-              <circle cx="105" cy="16" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.2;0.7;0.2" dur="3.5s" begin="1s" repeatCount="indefinite"/></circle>
-              <!-- Ring dots -->
-              <circle cx="30"  cy="122" r="2" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" repeatCount="indefinite"/></circle>
-              <circle cx="130" cy="122" r="2" opacity="0.6"><animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" begin="1s" repeatCount="indefinite"/></circle>
-              <circle cx="40"  cy="130" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3s" begin="0.5s" repeatCount="indefinite"/></circle>
-              <circle cx="120" cy="130" r="1.5" opacity="0.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3s" begin="1.5s" repeatCount="indefinite"/></circle>
+              <circle cx="35" cy="42" r="2.5"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="2s"   repeatCount="indefinite"/></circle>
+              <circle cx="28" cy="65" r="2"  ><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s"   begin="0.5s" repeatCount="indefinite"/></circle>
+              <circle cx="38" cy="88" r="2.2"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="2.5s" begin="1s"   repeatCount="indefinite"/></circle>
+              <circle cx="125" cy="42" r="2.5"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="2.2s" begin="0.3s" repeatCount="indefinite"/></circle>
+              <circle cx="132" cy="65" r="2"  ><animate attributeName="opacity" values="0.2;0.8;0.2" dur="3s"   begin="0.8s" repeatCount="indefinite"/></circle>
+              <circle cx="122" cy="88" r="2.2"><animate attributeName="opacity" values="0.2;0.9;0.2" dur="2s"   begin="1.5s" repeatCount="indefinite"/></circle>
+              <circle cx="55" cy="12"  r="1.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="4s"   begin="0.2s" repeatCount="indefinite"/></circle>
+              <circle cx="108" cy="11" r="1.5"><animate attributeName="opacity" values="0.1;0.6;0.1" dur="3.5s" begin="1s"   repeatCount="indefinite"/></circle>
+              <circle cx="80"  cy="8"  r="2"  ><animate attributeName="opacity" values="0.1;0.7;0.1" dur="2.8s" begin="0.6s" repeatCount="indefinite"/></circle>
             </g>
-
-            <!-- AI Usage % in center of chip -->
-            <text x="80" y="122" text-anchor="middle" font-family="monospace" font-size="7" font-weight="bold" fill="#00eaff" id="brain-pct">0%</text>
           </svg>
 
           <!-- Confidence Arc below brain -->
@@ -1770,9 +1801,32 @@ function setNav(el) {
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
 })();
 
-function setTF(tf, el) {
+let _currentTF = '5m';
+async function setTF(tf, el) {
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
+  _currentTF = tf;
+
+  // Show loading state
+  const canvas = document.getElementById('chart-canvas');
+  const placeholder = document.getElementById('chart-placeholder');
+  if (canvas) canvas.style.opacity = '0.4';
+
+  try {
+    const res = await fetch(`/api/candles?instrument=NIFTY&interval=${encodeURIComponent(tf)}&_t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (canvas) canvas.style.opacity = '1';
+    if (data.candles && data.candles.length) {
+      updateCandles(data.candles);
+    } else {
+      if (placeholder) placeholder.style.display = 'flex';
+      if (canvas) { canvas.style.display = 'none'; canvas.style.opacity = '1'; }
+    }
+  } catch (e) {
+    console.error('[setTF] fetch failed:', e);
+    if (canvas) canvas.style.opacity = '1';
+  }
 }
 </script>
 </body>

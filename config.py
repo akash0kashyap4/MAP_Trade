@@ -43,6 +43,8 @@ TRADING = {
     "stop_loss_rs":    500,    # fallback for backtests
     "target_rs":       1000,   # fallback for backtests
     "min_confidence":  1,      # kept for schema compat — trust AI's own conf
+    "trailing_sl_trigger": 0.40,   # move SL to cost when profit hits 40% of target
+    "trailing_sl_step":    0.20,   # trail SL by 20% of premium each step
 }
 
 SCHEDULE = {

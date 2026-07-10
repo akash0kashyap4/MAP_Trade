@@ -62,51 +62,58 @@ def get_index_candles(instrument_key: str, date_str: str) -> list:
     except Exception as e:
         print(f"[groww.historical] Groww candles API unavailable/failed for {instrument_key}: {e}. Trying yfinance...")
 
-    # 2. yfinance Fallback
-    try:
-        yf_symbol = _YF_INDEX_MAP.get(instrument_key)
-        if not yf_symbol:
-            # Fallback guessing
-            if "Bank" in instrument_key:
-                yf_symbol = "^NSEBANK"
-            elif "SENSEX" in instrument_key or "BSE" in instrument_key:
-                yf_symbol = "^BSESN"
-            else:
-                yf_symbol = "^NSEI"
+    # 2. yfinance Fallback — try 1m first, then 5m for dates >7 days old
+    yf_symbol = _YF_INDEX_MAP.get(instrument_key)
+    if not yf_symbol:
+        if "Bank" in instrument_key:
+            yf_symbol = "^NSEBANK"
+        elif "SENSEX" in instrument_key or "BSE" in instrument_key:
+            yf_symbol = "^BSESN"
+        else:
+            yf_symbol = "^NSEI"
 
-        # Calculate start and end dates
-        dt_start = datetime.strptime(date_str, "%Y-%m-%d")
-        dt_end = dt_start + timedelta(days=1)
-        start_date_str = dt_start.strftime("%Y-%m-%d")
-        end_date_str = dt_end.strftime("%Y-%m-%d")
+    dt_start = datetime.strptime(date_str, "%Y-%m-%d")
+    dt_end   = dt_start + timedelta(days=1)
+    age_days = (datetime.now() - dt_start).days
 
-        ticker = yf.Ticker(yf_symbol)
-        df = ticker.history(start=start_date_str, end=end_date_str, interval="1m")
-        if df.empty:
-            return []
+    # yfinance 1m data: max 7 days back; 5m: max 60 days; 1h: max 730 days
+    if age_days <= 6:
+        intervals_to_try = ["1m", "5m"]
+    elif age_days <= 58:
+        intervals_to_try = ["5m", "1h"]
+    else:
+        intervals_to_try = ["1h"]
 
-        # Localize/convert to IST timezone and parse
-        candles = []
-        for dt, row in df.iterrows():
-            # Ensure time is in 09:15 to 15:30 range
-            dt_ist = dt.astimezone(IST)
-            if not (time(9, 15) <= dt_ist.time() <= time(15, 30)):
+    for yf_interval in intervals_to_try:
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            df = ticker.history(start=dt_start.strftime("%Y-%m-%d"),
+                                end=dt_end.strftime("%Y-%m-%d"),
+                                interval=yf_interval)
+            if df.empty:
                 continue
 
-            ts = dt_ist.isoformat()
-            candles.append([
-                ts,
-                float(row["Open"]),
-                float(row["High"]),
-                float(row["Low"]),
-                float(row["Close"]),
-                int(row["Volume"]) if "Volume" in row else 0
-            ])
-        return candles
+            candles = []
+            for dt, row in df.iterrows():
+                dt_ist = dt.astimezone(IST)
+                if not (time(9, 15) <= dt_ist.time() <= time(15, 30)):
+                    continue
+                candles.append([
+                    dt_ist.isoformat(),
+                    float(row["Open"]), float(row["High"]),
+                    float(row["Low"]),  float(row["Close"]),
+                    int(row["Volume"]) if "Volume" in row else 0,
+                    0,
+                ])
+            if candles:
+                if yf_interval != "1m":
+                    print(f"[groww.historical] {date_str} {instrument_key}: using {yf_interval} candles (1m not available)")
+                return candles
+        except Exception as yf_err:
+            print(f"[groww.historical] yfinance {yf_interval} failed for {instrument_key} {date_str}: {yf_err}")
+            continue
 
-    except Exception as yf_err:
-        print(f"[groww.historical] yfinance fallback failed for {instrument_key}: {yf_err}")
-        return []
+    return []
 
 
 
@@ -138,6 +145,145 @@ def get_india_vix() -> float:
     except Exception as yf_err:
         print(f"[groww.historical] India VIX yfinance fallback failed: {yf_err}")
     return 13.0  # Safe default VIX if both fail
+
+
+# ── Functions required by backtest engine ────────────────────────────────────
+
+def is_trading_day(d) -> bool:
+    """Return True if d is an NSE trading day."""
+    from datetime import datetime
+    from config import is_market_day
+    if isinstance(d, str):
+        d = datetime.strptime(d, "%Y-%m-%d").date()
+    return is_market_day(d)
+
+
+def _weekly_expiry_weekday(instrument_key: str) -> int:
+    """Nifty/BankNifty expire on Thursday (3); Sensex on Friday (4)."""
+    key_upper = instrument_key.upper()
+    if "SENSEX" in key_upper or "BSE" in key_upper:
+        return 4  # Friday
+    return 3  # Thursday
+
+
+def get_expired_expiries(instrument_key: str) -> list:
+    """Return sorted list of past weekly expiry dates for backtesting."""
+    from datetime import date, timedelta
+    weekday = _weekly_expiry_weekday(instrument_key)
+    start = date(2023, 1, 1)
+    today = date.today()
+
+    expiries = []
+    d = start
+    # Advance to first target weekday
+    while d.weekday() != weekday:
+        d += timedelta(days=1)
+    while d <= today:
+        expiries.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(weeks=1)
+    return sorted(expiries)
+
+
+def find_nearest_expiry(expiries: list, target_date: str) -> str | None:
+    """Return the nearest expiry on or after target_date."""
+    if not expiries:
+        return None
+    future = [e for e in expiries if e >= target_date]
+    return future[0] if future else expiries[-1]
+
+
+def get_expired_option_key(instrument_key: str, expiry: str, strike: int, option_type: str) -> str:
+    """Return a formatted option identifier used as cache key in backtesting."""
+    return f"{instrument_key}|{expiry}|{strike}|{option_type}"
+
+
+def _bs_option_price(S: float, K: float, T_days: float,
+                     sigma: float = 0.15, option_type: str = "CE") -> float:
+    """Black-Scholes option price — Abramowitz & Stegun normal CDF approximation."""
+    import math
+    T = max(T_days / 365.0, 1 / 365.0)
+    r = 0.065  # India risk-free rate ~6.5%
+
+    def _ncdf(x: float) -> float:
+        k = 1.0 / (1.0 + 0.2316419 * abs(x))
+        p = 0.3989422803 * math.exp(-0.5 * x * x)
+        poly = k * (0.319381530 + k * (-0.356563782 + k * (
+            1.781477937 + k * (-1.821255978 + k * 1.330274429))))
+        cdf = 1.0 - p * poly
+        return cdf if x >= 0 else 1.0 - cdf
+
+    try:
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        if option_type == "CE":
+            price = S * _ncdf(d1) - K * math.exp(-r * T) * _ncdf(d2)
+        else:
+            price = K * math.exp(-r * T) * _ncdf(-d2) - S * _ncdf(-d1)
+        return max(round(price, 2), 0.05)
+    except Exception:
+        return 1.0
+
+
+def get_expired_option_candles(opt_key: str, date_str: str) -> list:
+    """
+    Generate synthetic 1-min option candles using Black-Scholes for backtesting.
+    Fetches underlying spot candles, then prices the option at each bar.
+    opt_key format: "NSE_INDEX|Nifty 50|2025-01-16|24000|CE"
+    """
+    try:
+        parts = opt_key.split("|")
+        if len(parts) == 5:
+            instrument_key = "|".join(parts[:2])   # "NSE_INDEX|Nifty 50"
+            expiry       = parts[2]
+            strike       = int(parts[3])
+            option_type  = parts[4]
+        elif len(parts) == 4:
+            instrument_key = parts[0]
+            expiry       = parts[1]
+            strike       = int(parts[2])
+            option_type  = parts[3]
+        else:
+            return []
+
+        from datetime import datetime
+        expiry_dt = datetime.strptime(expiry, "%Y-%m-%d").date()
+        trade_dt  = datetime.strptime(date_str, "%Y-%m-%d").date()
+        T_days    = max((expiry_dt - trade_dt).days, 0)
+
+        # Use higher IV for expiry day (gamma risk)
+        sigma = 0.20 if T_days == 0 else 0.15
+
+        spot_candles = get_index_candles(instrument_key, date_str)
+        if not spot_candles:
+            return []
+
+        option_candles = []
+        for c in spot_candles:
+            ts      = c[0]
+            s_open  = float(c[1])
+            s_high  = float(c[2])
+            s_low   = float(c[3])
+            s_close = float(c[4])
+
+            o_p = _bs_option_price(s_open,  strike, T_days, sigma, option_type)
+            c_p = _bs_option_price(s_close, strike, T_days, sigma, option_type)
+
+            # High/Low: CE gains on up-move, PE gains on down-move
+            if option_type == "CE":
+                h_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
+                l_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
+            else:
+                h_p = _bs_option_price(s_low,  strike, T_days, sigma, option_type)
+                l_p = _bs_option_price(s_high, strike, T_days, sigma, option_type)
+
+            opt_high = max(o_p, h_p, c_p)
+            opt_low  = min(o_p, l_p, c_p)
+            option_candles.append([ts, o_p, opt_high, opt_low, c_p, 0])
+
+        return option_candles
+    except Exception as e:
+        print(f"[historical] get_expired_option_candles error for {opt_key}: {e}")
+        return []
 
 
 def round_to_atm(spot: float, step: int) -> int:
