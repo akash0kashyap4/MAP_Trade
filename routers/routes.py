@@ -192,6 +192,11 @@ async def groww_health():
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
 
 
+_VALID_INSTRUMENTS = {"NIFTY", "BANKNIFTY", "SENSEX"}
+_VALID_STRATEGIES = {"first_candle", "orb15", "rsi_reversal", "ema_trend", "gap_direction"}
+_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
+
+
 class BacktestRequest(BaseModel):
     instrument:          str  = "NIFTY"
     start_date:          str  = "2025-01-01"
@@ -203,6 +208,23 @@ class BacktestRequest(BaseModel):
     lots:                Optional[int]   = None
     max_trades_per_day:  Optional[int]   = None
     max_daily_loss:      Optional[float] = None
+
+    def validate_request(self):
+        import re
+        from datetime import datetime
+        if self.instrument not in _VALID_INSTRUMENTS:
+            raise ValueError(f"instrument must be one of {_VALID_INSTRUMENTS}")
+        if self.strategy not in _VALID_STRATEGIES:
+            raise ValueError(f"strategy must be one of {_VALID_STRATEGIES}")
+        for field_name, date_str in (("start_date", self.start_date), ("end_date", self.end_date)):
+            if not re.match(_DATE_RE, date_str):
+                raise ValueError(f"{field_name} must be YYYY-MM-DD")
+            try:
+                datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"{field_name} is not a valid date")
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be before end_date")
 
 
 @router.get("/backtest/strategies")
@@ -230,6 +252,7 @@ async def trades_today():
 
 @router.get("/trades")
 async def trades(days: int = 30):
+    days = max(1, min(days, 365))  # cap between 1 and 365 days
     try:
         return await db.get_trades(days=days)
     except Exception as e:
@@ -248,6 +271,10 @@ async def rules():
 
 @router.post("/backtest/run")
 async def backtest_run(req: BacktestRequest, background_tasks: BackgroundTasks):
+    try:
+        req.validate_request()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     if _backtest_status["running"]:
         raise HTTPException(status_code=409, detail="Backtest already running")
 
