@@ -113,6 +113,19 @@ def _build_decision_user_msg(market_context: dict, context_block: str) -> str:
         capital_used_pct=cap.get("used_pct", 0),
         trade_cost_approx=approx_cost,
     )
+
+    # Optional intelligence blocks (news pulse + accumulated knowledge)
+    extras = []
+    if market_context.get("news_pulse"):
+        extras.append(f"━━━ TODAY'S NEWS PULSE ━━━\n{market_context['news_pulse']}")
+    if market_context.get("knowledge_lessons"):
+        extras.append(
+            "━━━ LEARNED KNOWLEDGE (lessons from my past trades & news patterns — apply them) ━━━\n"
+            f"{market_context['knowledge_lessons']}"
+        )
+    if extras:
+        user_msg = user_msg + "\n\n" + "\n\n".join(extras)
+
     return f"TODAY'S CONTEXT (prior decisions):\n{context_block}\n\n---\n\n{user_msg}"
 
 
@@ -188,6 +201,7 @@ class TradingAgent:
             prev_nifty=global_data.get("prev_nifty", "N/A"),
             prev_banknifty=global_data.get("prev_banknifty", "N/A"),
             prev_pcr=global_data.get("prev_pcr", "N/A"),
+            news_block=global_data.get("news_block", "No news scan available yet."),
         )
 
         raw = await self._ask(PREMARKET_SYSTEM, user_msg)

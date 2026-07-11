@@ -46,6 +46,9 @@ class LiveStore:
         self.bot_paused: bool = False
         self.new_entries_enabled: bool = True
 
+        # Today's news pulse (set by ai.news.NewsBrain.scan)
+        self.news_insight: dict = {}
+
     def set_prev_close(self, instrument: str, close: float):
         """Set yesterday's close — called once at startup."""
         info = self.prices.get(instrument)
@@ -193,6 +196,7 @@ class LiveStore:
             "last_tick":    self.last_tick_time,
             "tick_count":   self.tick_count,
             "india_vix":    self.india_vix,
+            "news":         self.news_insight,
         }
 
 

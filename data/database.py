@@ -56,6 +56,39 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     total_trades INTEGER, win_rate REAL,
     profit_factor REAL, max_drawdown REAL, sharpe REAL
 );
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date TEXT NOT NULL UNIQUE, mode TEXT DEFAULT 'paper',
+    report TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS news_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    news_date TEXT NOT NULL, fetched_at TEXT NOT NULL,
+    source TEXT, headline TEXT, url TEXT, sentiment TEXT,
+    UNIQUE(news_date, headline)
+);
+CREATE TABLE IF NOT EXISTS news_analysis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    news_date TEXT NOT NULL UNIQUE, analysis TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_base (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kdate TEXT NOT NULL, category TEXT NOT NULL, lesson TEXT NOT NULL,
+    source TEXT, confidence INTEGER DEFAULT 5, created_at TEXT NOT NULL,
+    UNIQUE(category, lesson)
+);
+CREATE TABLE IF NOT EXISTS ai_strategies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE, created_date TEXT NOT NULL,
+    rationale TEXT, rules TEXT, status TEXT DEFAULT 'PROPOSED',
+    stats TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ai_suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sdate TEXT NOT NULL, category TEXT, suggestion TEXT NOT NULL,
+    priority TEXT DEFAULT 'MEDIUM', status TEXT DEFAULT 'NEW',
+    created_at TEXT NOT NULL, UNIQUE(suggestion)
+);
 """
 
 # ── Postgres DDL ($N params, SERIAL) ─────────────────────────────────────────
@@ -86,6 +119,33 @@ CREATE TABLE IF NOT EXISTS learning_rules (
 CREATE TABLE IF NOT EXISTS backtest_runs (
     id SERIAL PRIMARY KEY, run_at TEXT NOT NULL, config TEXT, stats TEXT,
     total_trades INTEGER, win_rate REAL, profit_factor REAL, max_drawdown REAL, sharpe REAL
+);
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id SERIAL PRIMARY KEY, report_date TEXT NOT NULL UNIQUE, mode TEXT DEFAULT 'paper',
+    report TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS news_items (
+    id SERIAL PRIMARY KEY, news_date TEXT NOT NULL, fetched_at TEXT NOT NULL,
+    source TEXT, headline TEXT, url TEXT, sentiment TEXT,
+    UNIQUE(news_date, headline)
+);
+CREATE TABLE IF NOT EXISTS news_analysis (
+    id SERIAL PRIMARY KEY, news_date TEXT NOT NULL UNIQUE, analysis TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_base (
+    id SERIAL PRIMARY KEY, kdate TEXT NOT NULL, category TEXT NOT NULL, lesson TEXT NOT NULL,
+    source TEXT, confidence INTEGER DEFAULT 5, created_at TEXT NOT NULL,
+    UNIQUE(category, lesson)
+);
+CREATE TABLE IF NOT EXISTS ai_strategies (
+    id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_date TEXT NOT NULL,
+    rationale TEXT, rules TEXT, status TEXT DEFAULT 'PROPOSED',
+    stats TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ai_suggestions (
+    id SERIAL PRIMARY KEY, sdate TEXT NOT NULL, category TEXT, suggestion TEXT NOT NULL,
+    priority TEXT DEFAULT 'MEDIUM', status TEXT DEFAULT 'NEW',
+    created_at TEXT NOT NULL, UNIQUE(suggestion)
 );
 """
 
@@ -599,4 +659,240 @@ async def get_trade(trade_id: int) -> dict | None:
         except Exception as e:
             log.warning("[get_trade] PG error: %s", e)
             return None
+
+
+# ── Generic dual-backend helpers ──────────────────────────────────────────────
+# SQL is written once with ? placeholders and ON CONFLICT clauses (supported by
+# both SQLite >= 3.24 and Postgres); ? is converted to $N for asyncpg.
+
+def _qmark_to_pg(sql: str) -> str:
+    out, n = [], 0
+    for ch in sql:
+        if ch == "?":
+            n += 1
+            out.append(f"${n}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+async def _db_exec(sql: str, params: tuple = (), tag: str = "db_exec") -> None:
+    if _USE_SQLITE:
+        try:
+            async with _sqlite_conn() as db:
+                await db.execute(sql, params)
+                await db.commit()
+        except Exception as e:
+            log.warning("[%s] SQLite error: %s", tag, e)
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                await db.execute(_qmark_to_pg(sql), *params)
+        except Exception as e:
+            log.warning("[%s] PG error: %s", tag, e)
+
+
+async def _db_fetchall(sql: str, params: tuple = (), tag: str = "db_fetch") -> list[dict]:
+    if _USE_SQLITE:
+        try:
+            async with _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                async with db.execute(sql, params) as cur:
+                    return list(await cur.fetchall())
+        except Exception as e:
+            log.warning("[%s] SQLite error: %s", tag, e)
+            return []
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                rows = await db.fetch(_qmark_to_pg(sql), *params)
+                return [dict(r) for r in rows]
+        except Exception as e:
+            log.warning("[%s] PG error: %s", tag, e)
+            return []
+
+
+async def _db_fetchone(sql: str, params: tuple = (), tag: str = "db_fetchone") -> dict | None:
+    rows = await _db_fetchall(sql, params, tag)
+    return rows[0] if rows else None
+
+
+# ── Daily reports ─────────────────────────────────────────────────────────────
+
+async def save_daily_report(report_date: str, mode: str, report: dict) -> None:
+    await _db_exec(
+        "INSERT INTO daily_reports (report_date,mode,report,created_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(report_date) DO UPDATE SET mode=excluded.mode, report=excluded.report, "
+        "created_at=excluded.created_at",
+        (report_date, mode, json.dumps(report), _now_ist()),
+        tag="save_daily_report",
+    )
+
+
+async def get_daily_report(report_date: str) -> dict | None:
+    row = await _db_fetchone(
+        "SELECT * FROM daily_reports WHERE report_date=?", (report_date,), tag="get_daily_report"
+    )
+    if row and row.get("report"):
+        try:
+            row["report"] = json.loads(row["report"])
+        except Exception:
+            pass
+    return row
+
+
+async def get_daily_reports(limit: int = 30) -> list[dict]:
+    rows = await _db_fetchall(
+        "SELECT * FROM daily_reports ORDER BY report_date DESC LIMIT ?",
+        (int(limit),), tag="get_daily_reports",
+    )
+    for r in rows:
+        try:
+            r["report"] = json.loads(r["report"])
+        except Exception:
+            pass
+    return rows
+
+
+# ── News ──────────────────────────────────────────────────────────────────────
+
+async def save_news_items(news_date: str, items: list[dict]) -> None:
+    now = _now_ist()
+    for it in items:
+        await _db_exec(
+            "INSERT INTO news_items (news_date,fetched_at,source,headline,url,sentiment) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(news_date, headline) DO NOTHING",
+            (news_date, now, it.get("source", ""), (it.get("headline") or "")[:300],
+             it.get("url", ""), it.get("sentiment", "")),
+            tag="save_news_items",
+        )
+
+
+async def get_news_items(news_date: str, limit: int = 50) -> list[dict]:
+    return await _db_fetchall(
+        "SELECT * FROM news_items WHERE news_date=? ORDER BY id DESC LIMIT ?",
+        (news_date, int(limit)), tag="get_news_items",
+    )
+
+
+async def save_news_analysis(news_date: str, analysis: dict) -> None:
+    await _db_exec(
+        "INSERT INTO news_analysis (news_date,analysis,updated_at) VALUES (?,?,?) "
+        "ON CONFLICT(news_date) DO UPDATE SET analysis=excluded.analysis, updated_at=excluded.updated_at",
+        (news_date, json.dumps(analysis), _now_ist()),
+        tag="save_news_analysis",
+    )
+
+
+async def get_news_analysis(news_date: str) -> dict | None:
+    row = await _db_fetchone(
+        "SELECT * FROM news_analysis WHERE news_date=?", (news_date,), tag="get_news_analysis"
+    )
+    if row and row.get("analysis"):
+        try:
+            return json.loads(row["analysis"])
+        except Exception:
+            return None
+    return None
+
+
+# ── Knowledge base ────────────────────────────────────────────────────────────
+
+async def add_knowledge_entries(kdate: str, entries: list[dict], source: str = "") -> None:
+    now = _now_ist()
+    for e in entries:
+        lesson = (e.get("lesson") or "").strip()
+        if not lesson:
+            continue
+        conf = e.get("confidence", 5)
+        try:
+            conf = max(1, min(10, int(conf)))
+        except Exception:
+            conf = 5
+        await _db_exec(
+            "INSERT INTO knowledge_base (kdate,category,lesson,source,confidence,created_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(category, lesson) DO NOTHING",
+            (kdate, (e.get("category") or "MARKET_BEHAVIOUR").upper()[:40], lesson[:500],
+             e.get("source", source), conf, now),
+            tag="add_knowledge",
+        )
+
+
+async def get_knowledge(limit: int = 60, category: str | None = None) -> list[dict]:
+    if category:
+        return await _db_fetchall(
+            "SELECT * FROM knowledge_base WHERE category=? ORDER BY confidence DESC, id DESC LIMIT ?",
+            (category, int(limit)), tag="get_knowledge",
+        )
+    return await _db_fetchall(
+        "SELECT * FROM knowledge_base ORDER BY confidence DESC, id DESC LIMIT ?",
+        (int(limit),), tag="get_knowledge",
+    )
+
+
+# ── AI strategy lab ───────────────────────────────────────────────────────────
+
+async def upsert_ai_strategy(strategy: dict) -> None:
+    name = (strategy.get("name") or "").strip()
+    if not name:
+        return
+    rules = strategy.get("rules", [])
+    await _db_exec(
+        "INSERT INTO ai_strategies (name,created_date,rationale,rules,status,stats,updated_at) "
+        "VALUES (?,?,?,?,?,?,?) "
+        "ON CONFLICT(name) DO UPDATE SET rationale=excluded.rationale, rules=excluded.rules, "
+        "updated_at=excluded.updated_at",
+        (name[:120], strategy.get("created_date") or _now_ist()[:10],
+         (strategy.get("rationale") or "")[:800], json.dumps(rules),
+         (strategy.get("status") or "PROPOSED").upper(), json.dumps(strategy.get("stats", {})),
+         _now_ist()),
+        tag="upsert_ai_strategy",
+    )
+
+
+async def update_ai_strategy_status(name: str, status: str) -> None:
+    await _db_exec(
+        "UPDATE ai_strategies SET status=?, updated_at=? WHERE name=?",
+        (status.upper(), _now_ist(), name), tag="update_ai_strategy_status",
+    )
+
+
+async def get_ai_strategies() -> list[dict]:
+    rows = await _db_fetchall(
+        "SELECT * FROM ai_strategies ORDER BY id DESC LIMIT 100", (), tag="get_ai_strategies"
+    )
+    for r in rows:
+        for k in ("rules", "stats"):
+            try:
+                r[k] = json.loads(r[k]) if r.get(k) else ([] if k == "rules" else {})
+            except Exception:
+                pass
+    return rows
+
+
+# ── AI suggestions (feature requests from the brain) ─────────────────────────
+
+async def add_ai_suggestions(sdate: str, suggestions: list[dict]) -> None:
+    now = _now_ist()
+    for s in suggestions:
+        text = (s.get("suggestion") or "").strip()
+        if not text:
+            continue
+        await _db_exec(
+            "INSERT INTO ai_suggestions (sdate,category,suggestion,priority,status,created_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(suggestion) DO NOTHING",
+            (sdate, (s.get("category") or "OTHER").upper()[:30], text[:500],
+             (s.get("priority") or "MEDIUM").upper(), "NEW", now),
+            tag="add_ai_suggestions",
+        )
+
+
+async def get_ai_suggestions(limit: int = 100) -> list[dict]:
+    return await _db_fetchall(
+        "SELECT * FROM ai_suggestions ORDER BY "
+        "CASE priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, id DESC LIMIT ?",
+        (int(limit),), tag="get_ai_suggestions",
+    )
 

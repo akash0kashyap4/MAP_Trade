@@ -124,6 +124,7 @@ class LiveTrader:
         self._expiries_cache: dict = {}
         self._recent_entries: list[dict] = []   # tracks entries for correlated-position guard
         self._daily_loss_breaker_hit = False
+        self._knowledge_cache: tuple[str, str] = ("", "")  # (date, formatted block)
 
     async def premarket_analysis(self):
         if store.bot_paused:
@@ -137,6 +138,13 @@ class LiveTrader:
         if vix and vix > 0:
             global_data["india_vix"] = vix
             store.india_vix = vix
+        # Include today's news pulse in the premarket plan
+        if store.news_insight:
+            ni = store.news_insight
+            global_data["news_block"] = (
+                f"{ni.get('sentiment', 'NEUTRAL')} (score {ni.get('score', 0):+d}) — {ni.get('summary', '')}\n"
+                f"Risk flags: {', '.join(ni.get('risk_flags', []) or ['none'])}"
+            )
         plan = await self.agent.premarket_analysis(global_data)
         store.premarket_bias = plan
         store.ai_status = "waiting"
@@ -152,6 +160,22 @@ class LiveTrader:
             return False
         mins = now.hour * 60 + now.minute
         return 9 * 60 + 15 <= mins <= 15 * 60 + 30
+
+    async def _knowledge_block(self) -> str:
+        """Top lessons from the knowledge base, formatted for the decision prompt.
+        Cached per day — knowledge only changes via morning news scan / EOD report."""
+        today = datetime.now(IST).strftime("%Y-%m-%d")
+        if self._knowledge_cache[0] == today:
+            return self._knowledge_cache[1]
+        try:
+            lessons = await db.get_knowledge(limit=12)
+        except Exception:
+            lessons = []
+        block = "\n".join(
+            f"- [{le.get('category', '?')}] {le.get('lesson', '')}" for le in lessons
+        ) or "No accumulated lessons yet."
+        self._knowledge_cache = (today, block)
+        return block
 
     async def market_loop_tick(self):
         if store.bot_paused:
@@ -473,6 +497,16 @@ class LiveTrader:
                 "current":   round(store.current_capital, 2),
             },
         )
+
+        # Feed today's news pulse + accumulated knowledge into the AI prompt
+        if store.news_insight:
+            ni = store.news_insight
+            risk = f" | RISK FLAGS: {'; '.join(ni.get('risk_flags', []))}" if ni.get("risk_flags") else ""
+            context["news_pulse"] = (
+                f"[updated {ni.get('updated', '?')}] {ni.get('sentiment', 'NEUTRAL')} "
+                f"(score {ni.get('score', 0):+d}) — {ni.get('summary', '')}{risk}"
+            )
+        context["knowledge_lessons"] = await self._knowledge_block()
 
         store.update_indicators(instrument, context["indicators"])
 

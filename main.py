@@ -22,6 +22,8 @@ from data.database import init_db
 from data.store import store
 from ai.agent import TradingAgent
 from ai.learner import Learner
+from ai.news import NewsBrain
+from ai.reporter import DailyReporter
 from bot.trader import LiveTrader
 from routers.routes import router as api_router
 from routers.sse import sse_endpoint
@@ -93,13 +95,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[main] WARNING: Could not load P&L from DB: {e}")
 
-    agent   = TradingAgent()
-    trader  = LiveTrader(agent)
-    learner = Learner(agent, _DBProxy())
+    agent      = TradingAgent()
+    trader     = LiveTrader(agent)
+    learner    = Learner(agent, _DBProxy())
+    news_brain = NewsBrain(agent)
+    reporter   = DailyReporter(agent)
 
-    sched = setup_scheduler(trader, learner)
+    from bot.trader import _send_telegram
+    sched = setup_scheduler(trader, learner, news_brain=news_brain,
+                            reporter=reporter, notify_fn=_send_telegram)
     sched.start()
-    print("[main] Scheduler started")
+    print("[main] Scheduler started (news 08:15/12:30 + daily report 15:45 wired)")
 
     asyncio.create_task(start_feed())
     print("[main] WebSocket feed started")
@@ -117,14 +123,19 @@ async def lifespan(app: FastAPI):
     _now = datetime.now(pytz.timezone("Asia/Kolkata"))
     _mins = _now.hour * 60 + _now.minute
     if is_market_day(_now.date()) and _mins >= 8 * 60 + 30:
-        asyncio.create_task(trader.premarket_analysis())
-        print("[main] Late start detected — running premarket analysis now")
+        async def _late_start():
+            await news_brain.scan()          # news first, so premarket plan sees it
+            await trader.premarket_analysis()
+        asyncio.create_task(_late_start())
+        print("[main] Late start detected — running news scan + premarket analysis now")
     elif not is_market_day(_now.date()):
         print(f"[main] {_now.date()} is NOT a trading day (weekend or NSE holiday) — skipping premarket")
 
-    app.state.trader  = trader
-    app.state.learner = learner
-    app.state.agent   = agent
+    app.state.trader     = trader
+    app.state.learner    = learner
+    app.state.agent      = agent
+    app.state.news_brain = news_brain
+    app.state.reporter   = reporter
 
     yield
 

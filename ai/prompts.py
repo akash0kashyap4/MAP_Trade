@@ -22,6 +22,9 @@ Previous Day:
 - BankNifty Close: {prev_banknifty}
 - PCR (Nifty): {prev_pcr}
 
+Today's News Pulse (from Indian financial news feeds):
+{news_block}
+
 Analyze and return JSON:
 {{
   "bias": "BULLISH" | "BEARISH" | "NEUTRAL",
@@ -161,6 +164,100 @@ Return JSON:
   "new_sl": <float — required if MOVE_SL, must be > current SL and < current price>,
   "reason": "<one sentence>"
 }}
+"""
+
+NEWS_ANALYSIS_SYSTEM = """
+You are Ragi's news-intelligence module — an expert on how news moves Indian index markets
+(Nifty, BankNifty, Sensex). You read raw headlines and convert them into a trading-relevant
+market pulse. You are also LEARNING: extract general lessons about how news types map to
+market behaviour, so the trading brain gets smarter every day.
+Respond in valid JSON only. No markdown, no preamble.
+"""
+
+NEWS_ANALYSIS_USER = """
+Date: {date} | Time: {time} IST
+
+Raw headlines fetched from Indian financial news feeds:
+{headlines_block}
+
+Analyze for TODAY's Indian index options trading and return JSON:
+{{
+  "overall_sentiment": "BULLISH" | "BEARISH" | "NEUTRAL" | "MIXED",
+  "sentiment_score": <-10 to +10, negative = bearish>,
+  "expected_impact": {{"NIFTY": "<one line>", "BANKNIFTY": "<one line>", "SENSEX": "<one line>"}},
+  "key_events": [
+    {{"event": "<headline essence>", "why_it_matters": "<one line>", "sentiment": "POS|NEG|NEU"}}
+  ],
+  "risk_flags": ["<events that could cause sudden volatility today>"],
+  "summary_for_trader": "<max 60 words — what the trading brain must know right now>",
+  "lessons": [
+    {{"category": "NEWS_PATTERN", "lesson": "<general reusable rule about how this type of news moves the market>", "confidence": 1-10}}
+  ]
+}}
+Keep key_events to the 5 most market-moving items. Ignore celebrity/sports/irrelevant news.
+"""
+
+DAILY_REPORT_SYSTEM = """
+You are Ragi, a self-learning AI options trader, writing your own brutally honest end-of-day
+journal. You analyze every trade like a post-mortem: WHY did it profit, WHY did it lose —
+root causes, not excuses. You extract reusable knowledge, propose new strategies from
+patterns you noticed, and tell your developer what data/features you need to get smarter.
+Respond in valid JSON only. No markdown, no preamble.
+"""
+
+DAILY_REPORT_USER = """
+Date: {date} | Mode: {mode} | Generated at: {time} IST
+
+━━━ PREMARKET PLAN (what I predicted at 08:30) ━━━
+{premarket_block}
+
+━━━ MORNING NEWS ANALYSIS ━━━
+{news_block}
+
+━━━ WHAT THE MARKET ACTUALLY DID ━━━
+{market_block}
+
+━━━ MY TRADES TODAY ({n_trades} total, {n_open} still open) ━━━
+{trades_block}
+
+━━━ SESSION STATS ━━━
+Realized P&L: ₹{realized_pnl:,.0f} | Wins: {wins} | Losses: {losses} | Win rate: {win_rate:.0f}%
+Fees paid: ₹{fees:,.0f} | Capital: ₹{capital:,.0f}
+
+━━━ KNOWLEDGE I ALREADY HAVE (don't repeat these) ━━━
+{known_lessons}
+
+Write my daily self-review. Return JSON:
+{{
+  "day_summary": "<3-4 sentences: what kind of day it was and how I performed>",
+  "market_story": "<what actually drove the market today — connect news to price action>",
+  "prediction_accuracy": "<did my premarket bias + news sentiment match reality? be specific>",
+  "trade_postmortems": [
+    {{
+      "trade_ref": "<instrument strike type entry_time>",
+      "result": "PROFIT" | "LOSS" | "OPEN",
+      "pnl": <number>,
+      "why": "<root cause of the outcome in plain language>",
+      "what_went_right": "<or null>",
+      "what_went_wrong": "<or null>",
+      "lesson": "<one reusable lesson from this trade>"
+    }}
+  ],
+  "no_trade_reason": "<if zero trades: why, and was staying out correct? else null>",
+  "knowledge_gained": [
+    {{"category": "NEWS_PATTERN|MARKET_BEHAVIOUR|MISTAKE|STRATEGY_INSIGHT|RISK", "lesson": "<general reusable rule>", "confidence": 1-10}}
+  ],
+  "new_strategies": [
+    {{"name": "<short unique name>", "rationale": "<pattern I noticed that justifies this>", "rules": ["<entry rule>", "<exit rule>", "<filter>"], "when_to_use": "<market condition>"}}
+  ],
+  "feature_requests": [
+    {{"category": "DATA|SIGNAL|TOOL|RISK|OTHER", "suggestion": "<specific feature/data I need to understand the market better>", "priority": "HIGH|MEDIUM|LOW", "why": "<how it would improve my decisions>"}}
+  ],
+  "tomorrow_plan": "<2-3 sentences>",
+  "self_grade": "<A/B/C/D/F> — <one line justification>"
+}}
+Rules: new_strategies only when a genuine repeatable pattern exists (max 1/day, else []).
+feature_requests: max 3, only things I genuinely lack. knowledge_gained: max 4, must be NEW.
 """
 
 NIGHTLY_REVIEW_SYSTEM = """

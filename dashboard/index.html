@@ -438,6 +438,53 @@
   .settings-btn.warn { border-color: var(--amber); color: var(--amber); }
   .settings-btn.danger { border-color: var(--red); color: var(--red); }
   .settings-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ── Reports tab ── */
+  .rpt-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 8px; margin-bottom: 10px;
+  }
+  .rpt-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .rpt-tab {
+    background: transparent; border: 1px solid var(--grid); color: var(--text-dim);
+    font-family: var(--label); font-size: 10px; letter-spacing: 1.5px;
+    padding: 5px 10px; border-radius: 2px; cursor: pointer;
+  }
+  .rpt-tab.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,0.06); }
+  .rpt-card {
+    background: rgba(10, 10, 18, 0.88); border: 1px solid var(--grid);
+    border-radius: 4px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .rpt-card.clickable { cursor: pointer; }
+  .rpt-card.clickable:hover { border-color: var(--cyan); }
+  .rpt-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rpt-badge {
+    font-family: var(--label); font-size: 9px; letter-spacing: 1.5px;
+    padding: 2px 7px; border-radius: 2px; border: 1px solid; white-space: nowrap;
+  }
+  .rpt-badge.win  { color: var(--green); border-color: var(--green); }
+  .rpt-badge.loss { color: var(--red); border-color: var(--red); }
+  .rpt-badge.open { color: var(--amber); border-color: var(--amber); }
+  .rpt-badge.neutral { color: var(--text-dim); border-color: var(--grid); }
+  .rpt-badge.cyan { color: var(--cyan); border-color: var(--cyan); }
+  .rpt-h { font-family: var(--label); font-size: 10px; letter-spacing: 2px; color: var(--cyan); margin: 12px 0 6px; }
+  .rpt-text { font-size: 11px; line-height: 1.6; color: var(--text); }
+  .rpt-dim { font-size: 10.5px; line-height: 1.55; color: var(--text-dim); }
+  .pm-item {
+    border: 1px solid var(--grid); border-left: 3px solid var(--grid);
+    border-radius: 3px; padding: 8px 10px; margin-bottom: 6px; background: rgba(255,255,255,0.02);
+  }
+  .pm-item.win  { border-left-color: var(--green); }
+  .pm-item.loss { border-left-color: var(--red); }
+  .kn-chip {
+    display: inline-block; border: 1px solid var(--grid); border-radius: 2px;
+    font-size: 10px; padding: 4px 8px; margin: 0 5px 5px 0; color: var(--text);
+    background: rgba(255,255,255,0.02);
+  }
+  .kn-cat { font-family: var(--label); font-size: 8.5px; letter-spacing: 1px; color: var(--cyan); margin-right: 5px; }
+  .rpt-stat { text-align: center; min-width: 70px; }
+  .rpt-stat .v { font-size: 15px; font-weight: 700; }
+  .rpt-stat .k { font-family: var(--label); font-size: 8.5px; letter-spacing: 1.5px; color: var(--text-dim); }
   .risk-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -863,9 +910,49 @@
         <div style="height:20px"></div>
         </div><!-- /sec-backtest -->
 
-        <!-- SECTION: Reports placeholder -->
+        <!-- SECTION: Reports — daily journal, strategy lab, knowledge, AI requests, news -->
         <div id="sec-reports" class="nav-section-panel" style="display:none">
-          <div style="color:var(--text-dim);font-size:11px;padding:20px 0">Reports coming soon.</div>
+          <div class="rpt-toolbar">
+            <div class="rpt-tabs">
+              <button class="rpt-tab active" data-rtab="daily" onclick="setReportTab(this)">DAILY REPORTS</button>
+              <button class="rpt-tab" data-rtab="strategies" onclick="setReportTab(this)">STRATEGY LAB</button>
+              <button class="rpt-tab" data-rtab="knowledge" onclick="setReportTab(this)">KNOWLEDGE BASE</button>
+              <button class="rpt-tab" data-rtab="suggestions" onclick="setReportTab(this)">AI REQUESTS</button>
+              <button class="rpt-tab" data-rtab="news" onclick="setReportTab(this)">NEWS PULSE</button>
+            </div>
+            <div>
+              <button class="settings-btn" id="rpt-gen-btn" onclick="generateReportNow()">GENERATE TODAY'S REPORT</button>
+            </div>
+          </div>
+          <div id="rpt-msg" style="display:none;font-size:10.5px;margin-bottom:8px"></div>
+
+          <div id="rtab-daily" class="rpt-pane">
+            <div id="rpt-list" class="rpt-dim">Loading reports…</div>
+            <div id="rpt-detail" style="display:none"></div>
+          </div>
+          <div id="rtab-strategies" class="rpt-pane" style="display:none">
+            <p class="rpt-dim" style="margin-bottom:8px">Strategies the bot invented on its own from patterns in its trades.
+            Lifecycle: PROPOSED → TESTING → ACTIVE → RETIRED.</p>
+            <div id="strat-list" class="rpt-dim">Loading…</div>
+          </div>
+          <div id="rtab-knowledge" class="rpt-pane" style="display:none">
+            <p class="rpt-dim" style="margin-bottom:8px">Everything the AI has learned — from news patterns, winning trades and mistakes.
+            These lessons are injected into every trading decision.</p>
+            <div id="knowledge-list" class="rpt-dim">Loading…</div>
+          </div>
+          <div id="rtab-suggestions" class="rpt-pane" style="display:none">
+            <p class="rpt-dim" style="margin-bottom:8px">Features and data the AI brain says it needs to understand the market better.</p>
+            <div id="suggestions-list" class="rpt-dim">Loading…</div>
+          </div>
+          <div id="rtab-news" class="rpt-pane" style="display:none">
+            <div class="rpt-toolbar" style="margin-bottom:8px">
+              <div class="rpt-dim">Today's market news, analyzed by the AI (auto-scan 08:15 &amp; 12:30 IST).</div>
+              <button class="settings-btn" id="news-scan-btn" onclick="newsScanNow()">SCAN NEWS NOW</button>
+            </div>
+            <div id="news-analysis"></div>
+            <div id="news-items" class="rpt-dim">Loading…</div>
+          </div>
+          <div style="height:20px"></div>
         </div><!-- /sec-reports -->
 
         <!-- SECTION: Settings -->
@@ -2141,6 +2228,301 @@ function renderBacktestResult(r) {
       </table>`;
   }
 }
+// ── REPORTS MODULE ──
+// Daily journal + strategy lab + knowledge base + AI requests + news pulse.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function pnlColor(v) { return (v||0) >= 0 ? 'var(--green)' : 'var(--red)'; }
+function rupees(v) { return '₹' + Math.round(v||0).toLocaleString('en-IN'); }
+
+const _rptLoaded = {};   // lazy-load flag per sub-tab
+
+function reportsOnOpen() {
+  const active = document.querySelector('.rpt-tab.active');
+  _loadReportPane(active ? active.dataset.rtab : 'daily');
+}
+
+function setReportTab(btn) {
+  document.querySelectorAll('.rpt-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.rpt-pane').forEach(p => p.style.display = 'none');
+  const pane = document.getElementById('rtab-' + btn.dataset.rtab);
+  if (pane) pane.style.display = '';
+  _loadReportPane(btn.dataset.rtab);
+}
+
+function _loadReportPane(tab) {
+  if (_rptLoaded[tab]) return;
+  _rptLoaded[tab] = true;
+  if (tab === 'daily') loadReportsList();
+  else if (tab === 'strategies') loadStrategies();
+  else if (tab === 'knowledge') loadKnowledge();
+  else if (tab === 'suggestions') loadSuggestions();
+  else if (tab === 'news') loadNewsPulse();
+}
+
+function _rptMsg(text, isErr) {
+  const el = document.getElementById('rpt-msg');
+  el.style.display = text ? '' : 'none';
+  el.style.color = isErr ? 'var(--red)' : 'var(--green)';
+  el.textContent = text || '';
+}
+
+async function loadReportsList() {
+  const list = document.getElementById('rpt-list');
+  try {
+    const r = await fetch('/api/reports');
+    const reports = await r.json();
+    if (!reports.length) {
+      list.innerHTML = '<div class="rpt-card rpt-dim">No daily reports yet. The bot writes one automatically at 15:45 IST after each trading day — or press GENERATE TODAY’S REPORT.</div>';
+      return;
+    }
+    list.innerHTML = reports.map(rep => {
+      const s = rep.stats || {};
+      const pnl = s.realized_pnl || 0;
+      return `<div class="rpt-card clickable" onclick="openReport('${esc(rep.date)}')">
+        <div class="rpt-row">
+          <div>
+            <span style="font-size:13px;font-weight:700;color:var(--cyan)">${esc(rep.date)}</span>
+            <span class="rpt-badge ${rep.mode === 'live' ? 'loss' : 'neutral'}" style="margin-left:8px">${esc((rep.mode||'paper').toUpperCase())}</span>
+            ${rep.self_grade ? `<span class="rpt-badge cyan" style="margin-left:6px">GRADE ${esc(String(rep.self_grade).slice(0,18))}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:14px">
+            <div class="rpt-stat"><div class="v">${s.n_trades ?? 0}</div><div class="k">TRADES</div></div>
+            <div class="rpt-stat"><div class="v">${(s.win_rate ?? 0).toFixed(0)}%</div><div class="k">WIN RATE</div></div>
+            <div class="rpt-stat"><div class="v" style="color:${pnlColor(pnl)}">${rupees(pnl)}</div><div class="k">P&amp;L</div></div>
+          </div>
+        </div>
+        ${rep.day_summary ? `<div class="rpt-dim" style="margin-top:6px">${esc(rep.day_summary)}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load reports.</div>';
+  }
+}
+
+async function openReport(date) {
+  const detail = document.getElementById('rpt-detail');
+  const list = document.getElementById('rpt-list');
+  try {
+    const r = await fetch('/api/reports/' + encodeURIComponent(date));
+    if (!r.ok) { _rptMsg('Report not found for ' + date, true); return; }
+    const row = await r.json();
+    const rep = row.report || {};
+    const ai = rep.ai || {};
+    const s = rep.stats || {};
+    const news = rep.news_pulse || {};
+
+    const pmHtml = (ai.trade_postmortems || []).map(pm => {
+      const cls = pm.result === 'PROFIT' ? 'win' : (pm.result === 'LOSS' ? 'loss' : '');
+      return `<div class="pm-item ${cls}">
+        <div class="rpt-row">
+          <span style="font-size:11px;color:var(--cyan)">${esc(pm.trade_ref || '')}</span>
+          <span><span class="rpt-badge ${cls || 'open'}">${esc(pm.result || 'OPEN')}</span>
+          <span style="margin-left:8px;font-weight:700;color:${pnlColor(pm.pnl)}">${rupees(pm.pnl)}</span></span>
+        </div>
+        <div class="rpt-text" style="margin-top:5px"><b style="color:var(--amber)">WHY:</b> ${esc(pm.why || '')}</div>
+        ${pm.what_went_right ? `<div class="rpt-dim" style="margin-top:3px"><b style="color:var(--green)">RIGHT:</b> ${esc(pm.what_went_right)}</div>` : ''}
+        ${pm.what_went_wrong ? `<div class="rpt-dim" style="margin-top:3px"><b style="color:var(--red)">WRONG:</b> ${esc(pm.what_went_wrong)}</div>` : ''}
+        ${pm.lesson ? `<div class="rpt-dim" style="margin-top:3px"><b style="color:var(--cyan)">LESSON:</b> ${esc(pm.lesson)}</div>` : ''}
+      </div>`;
+    }).join('') || `<div class="rpt-dim">${esc(ai.no_trade_reason || 'No closed trades to analyze.')}</div>`;
+
+    const knHtml = (ai.knowledge_gained || []).map(k =>
+      `<span class="kn-chip"><span class="kn-cat">${esc(k.category || '')}</span>${esc(k.lesson || '')}</span>`
+    ).join('') || '<span class="rpt-dim">None recorded.</span>';
+
+    const stratHtml = (ai.new_strategies || []).map(st =>
+      `<div class="pm-item"><b style="color:var(--cyan)">${esc(st.name || '')}</b>
+       <div class="rpt-dim" style="margin-top:3px">${esc(st.rationale || '')}</div>
+       <div class="rpt-dim" style="margin-top:3px">${(st.rules || []).map(ru => '• ' + esc(ru)).join('<br>')}</div></div>`
+    ).join('');
+
+    const frHtml = (ai.feature_requests || []).map(fr =>
+      `<div class="pm-item"><span class="rpt-badge ${fr.priority === 'HIGH' ? 'loss' : (fr.priority === 'MEDIUM' ? 'open' : 'neutral')}">${esc(fr.priority || 'MEDIUM')}</span>
+       <span class="rpt-badge neutral" style="margin-left:5px">${esc(fr.category || '')}</span>
+       <div class="rpt-text" style="margin-top:5px">${esc(fr.suggestion || '')}</div>
+       ${fr.why ? `<div class="rpt-dim" style="margin-top:3px">${esc(fr.why)}</div>` : ''}</div>`
+    ).join('');
+
+    detail.innerHTML = `
+      <button class="settings-btn" onclick="closeReport()" style="margin-bottom:10px">← ALL REPORTS</button>
+      <div class="rpt-card">
+        <div class="rpt-row">
+          <div>
+            <span style="font-size:15px;font-weight:700;color:var(--cyan)">${esc(rep.date || date)}</span>
+            <span class="rpt-badge ${rep.mode === 'live' ? 'loss' : 'neutral'}" style="margin-left:8px">${esc((rep.mode||'paper').toUpperCase())}</span>
+            ${ai.self_grade ? `<span class="rpt-badge cyan" style="margin-left:6px">${esc(ai.self_grade)}</span>` : ''}
+          </div>
+          <div style="display:flex;gap:14px">
+            <div class="rpt-stat"><div class="v">${s.n_trades ?? 0}</div><div class="k">TRADES</div></div>
+            <div class="rpt-stat"><div class="v">${s.wins ?? 0}/${s.losses ?? 0}</div><div class="k">W/L</div></div>
+            <div class="rpt-stat"><div class="v">${(s.win_rate ?? 0).toFixed(0)}%</div><div class="k">WIN RATE</div></div>
+            <div class="rpt-stat"><div class="v" style="color:${pnlColor(s.realized_pnl)}">${rupees(s.realized_pnl)}</div><div class="k">P&amp;L</div></div>
+            <div class="rpt-stat"><div class="v" style="color:var(--amber)">${rupees(s.fees)}</div><div class="k">FEES</div></div>
+          </div>
+        </div>
+        ${ai.day_summary ? `<div class="rpt-h">DAY SUMMARY</div><div class="rpt-text">${esc(ai.day_summary)}</div>` : ''}
+        ${ai.market_story ? `<div class="rpt-h">MARKET STORY</div><div class="rpt-text">${esc(ai.market_story)}</div>` : ''}
+        ${ai.prediction_accuracy ? `<div class="rpt-h">PREDICTION vs REALITY</div><div class="rpt-text">${esc(ai.prediction_accuracy)}</div>` : ''}
+        ${news.summary ? `<div class="rpt-h">NEWS PULSE (morning)</div><div class="rpt-text">
+          <span class="rpt-badge ${news.sentiment === 'BULLISH' ? 'win' : (news.sentiment === 'BEARISH' ? 'loss' : 'neutral')}">${esc(news.sentiment || '')}</span>
+          <span style="margin-left:8px">${esc(news.summary)}</span></div>` : ''}
+        <div class="rpt-h">TRADE POST-MORTEMS — why each trade won or lost</div>${pmHtml}
+        <div class="rpt-h">KNOWLEDGE GAINED TODAY</div><div>${knHtml}</div>
+        ${stratHtml ? `<div class="rpt-h">NEW STRATEGIES PROPOSED</div>${stratHtml}` : ''}
+        ${frHtml ? `<div class="rpt-h">AI FEATURE REQUESTS — what I need to get smarter</div>${frHtml}` : ''}
+        ${ai.tomorrow_plan ? `<div class="rpt-h">TOMORROW'S PLAN</div><div class="rpt-text">${esc(ai.tomorrow_plan)}</div>` : ''}
+        ${ai.note ? `<div class="rpt-dim" style="margin-top:8px">${esc(ai.note)}</div>` : ''}
+      </div>`;
+    list.style.display = 'none';
+    detail.style.display = '';
+  } catch (e) {
+    _rptMsg('Failed to load report: ' + e.message, true);
+  }
+}
+
+function closeReport() {
+  document.getElementById('rpt-detail').style.display = 'none';
+  document.getElementById('rpt-list').style.display = '';
+}
+
+async function generateReportNow() {
+  const btn = document.getElementById('rpt-gen-btn');
+  btn.disabled = true; btn.textContent = 'GENERATING… (AI is reviewing the day)';
+  _rptMsg('');
+  try {
+    const r = await fetch('/api/reports/generate', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.ok === false) throw new Error(d.detail || d.error || 'generation failed');
+    _rptMsg('Report generated for ' + d.date + ' ✓', false);
+    _rptLoaded['daily'] = false;
+    closeReport();
+    _loadReportPane('daily');
+  } catch (e) {
+    _rptMsg('Report generation failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'GENERATE TODAY’S REPORT';
+  }
+}
+
+async function loadStrategies() {
+  const el = document.getElementById('strat-list');
+  try {
+    const strats = await (await fetch('/api/ai/strategies')).json();
+    if (!strats.length) {
+      el.innerHTML = '<div class="rpt-card rpt-dim">No AI-generated strategies yet. When the bot spots a repeatable pattern in its daily review, the strategy appears here.</div>';
+      return;
+    }
+    const stCls = { PROPOSED: 'open', TESTING: 'cyan', ACTIVE: 'win', RETIRED: 'neutral' };
+    el.innerHTML = strats.map(st => `<div class="rpt-card">
+      <div class="rpt-row">
+        <b style="color:var(--cyan);font-size:12px">${esc(st.name)}</b>
+        <span><span class="rpt-badge ${stCls[st.status] || 'neutral'}">${esc(st.status || '')}</span>
+        <span class="rpt-badge neutral" style="margin-left:5px">${esc(st.created_date || '')}</span></span>
+      </div>
+      ${st.rationale ? `<div class="rpt-dim" style="margin-top:5px">${esc(st.rationale)}</div>` : ''}
+      ${(st.rules || []).length ? `<div class="rpt-text" style="margin-top:5px">${st.rules.map(ru => '• ' + esc(ru)).join('<br>')}</div>` : ''}
+    </div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load strategies.</div>'; }
+}
+
+async function loadKnowledge() {
+  const el = document.getElementById('knowledge-list');
+  try {
+    const rows = await (await fetch('/api/ai/knowledge')).json();
+    if (!rows.length) {
+      el.innerHTML = '<div class="rpt-card rpt-dim">Knowledge base is empty. Lessons appear here from news scans and daily post-mortems.</div>';
+      return;
+    }
+    const groups = {};
+    rows.forEach(k => { (groups[k.category] = groups[k.category] || []).push(k); });
+    el.innerHTML = Object.entries(groups).map(([cat, items]) => `<div class="rpt-card">
+      <div class="rpt-h" style="margin-top:0">${esc(cat)} (${items.length})</div>
+      ${items.map(k => `<div class="pm-item" style="margin-bottom:4px">
+        <div class="rpt-text">${esc(k.lesson)}</div>
+        <div class="rpt-dim" style="margin-top:2px;font-size:9.5px">confidence ${k.confidence}/10 · ${esc(k.kdate || '')} · ${esc(k.source || '')}</div>
+      </div>`).join('')}
+    </div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load knowledge.</div>'; }
+}
+
+async function loadSuggestions() {
+  const el = document.getElementById('suggestions-list');
+  try {
+    const rows = await (await fetch('/api/ai/suggestions')).json();
+    if (!rows.length) {
+      el.innerHTML = '<div class="rpt-card rpt-dim">No AI feature requests yet. During the daily report the brain lists data/tools it needs — they collect here.</div>';
+      return;
+    }
+    el.innerHTML = rows.map(sg => `<div class="rpt-card">
+      <div class="rpt-row">
+        <span><span class="rpt-badge ${sg.priority === 'HIGH' ? 'loss' : (sg.priority === 'MEDIUM' ? 'open' : 'neutral')}">${esc(sg.priority)}</span>
+        <span class="rpt-badge neutral" style="margin-left:5px">${esc(sg.category || '')}</span></span>
+        <span class="rpt-dim" style="font-size:9.5px">${esc(sg.sdate || '')} · ${esc(sg.status || '')}</span>
+      </div>
+      <div class="rpt-text" style="margin-top:5px">${esc(sg.suggestion)}</div>
+    </div>`).join('');
+  } catch (e) { el.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load suggestions.</div>'; }
+}
+
+async function loadNewsPulse() {
+  const anEl = document.getElementById('news-analysis');
+  const itEl = document.getElementById('news-items');
+  try {
+    const d = await (await fetch('/api/news/today')).json();
+    const a = d.analysis || {};
+    if (a.overall_sentiment) {
+      const cls = a.overall_sentiment === 'BULLISH' ? 'win' : (a.overall_sentiment === 'BEARISH' ? 'loss' : 'neutral');
+      anEl.innerHTML = `<div class="rpt-card">
+        <div class="rpt-row">
+          <span><span class="rpt-badge ${cls}">${esc(a.overall_sentiment)}</span>
+          <span style="margin-left:8px;font-weight:700;color:${(a.sentiment_score||0) >= 0 ? 'var(--green)' : 'var(--red)'}">score ${a.sentiment_score >= 0 ? '+' : ''}${a.sentiment_score || 0}</span></span>
+        </div>
+        <div class="rpt-text" style="margin-top:6px">${esc(a.summary_for_trader || '')}</div>
+        ${(a.key_events || []).length ? `<div class="rpt-h">KEY EVENTS</div>` +
+          a.key_events.map(ev => `<div class="pm-item" style="margin-bottom:4px">
+            <div class="rpt-text">${esc(ev.event || '')} <span class="rpt-badge ${ev.sentiment === 'POS' ? 'win' : (ev.sentiment === 'NEG' ? 'loss' : 'neutral')}" style="margin-left:5px">${esc(ev.sentiment || '')}</span></div>
+            <div class="rpt-dim" style="margin-top:2px">${esc(ev.why_it_matters || '')}</div>
+          </div>`).join('') : ''}
+        ${(a.risk_flags || []).length ? `<div class="rpt-h">RISK FLAGS</div><div class="rpt-text" style="color:var(--amber)">${a.risk_flags.map(esc).join(' · ')}</div>` : ''}
+      </div>`;
+    } else {
+      anEl.innerHTML = '<div class="rpt-card rpt-dim">No AI news analysis yet today. Auto-scans run 08:15 and 12:30 IST, or press SCAN NEWS NOW.</div>';
+    }
+    const items = d.items || [];
+    itEl.innerHTML = items.length ? `<div class="rpt-card">
+      <div class="rpt-h" style="margin-top:0">RAW HEADLINES (${items.length})</div>
+      ${items.map(n => `<div style="padding:4px 0;border-bottom:1px solid var(--grid)">
+        <span class="kn-cat">${esc(n.source || '')}</span>
+        <span class="rpt-text">${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}</span>
+      </div>`).join('')}
+    </div>` : '';
+  } catch (e) {
+    anEl.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load news.</div>';
+    itEl.innerHTML = '';
+  }
+}
+
+async function newsScanNow() {
+  const btn = document.getElementById('news-scan-btn');
+  btn.disabled = true; btn.textContent = 'SCANNING…';
+  try {
+    const r = await fetch('/api/news/scan', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.ok === false) throw new Error(d.detail || d.error || 'scan failed');
+    _rptMsg('News scanned — sentiment ' + d.sentiment + ' ✓', false);
+    _rptLoaded['news'] = false;
+    _loadReportPane('news');
+  } catch (e) {
+    _rptMsg('News scan failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false; btn.textContent = 'SCAN NEWS NOW';
+  }
+}
+
 // ── NAV & TIMEFRAME ──
 const NAV_SECTIONS = {
   'Dashboard':       ['sec-market','sec-positions','sec-trades','sec-backtest'],
@@ -2169,6 +2551,7 @@ function setNav(el) {
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
   const titleEl = document.querySelector('.center-panel .panel-title');
   if (titleEl && NAV_TITLES[label]) titleEl.textContent = NAV_TITLES[label];
+  if (label === 'Reports') reportsOnOpen();
 }
 // Initialise nav to Dashboard view (show all sections)
 (function initNav() {

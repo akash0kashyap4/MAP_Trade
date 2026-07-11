@@ -821,3 +821,98 @@ async def set_trading_mode(req: ModeRequest, request: Request):
     except Exception:
         pass
     return {"ok": True, "mode": req.mode}
+
+
+# ─── Reports / AI learning endpoints ─────────────────────────────────────────
+
+def _today_ist_date() -> str:
+    import pytz
+    from datetime import datetime
+    return datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%Y-%m-%d")
+
+
+@router.get("/reports")
+async def list_reports(limit: int = 30):
+    """Daily report summaries, newest first."""
+    limit = max(1, min(limit, 120))
+    rows = await db.get_daily_reports(limit=limit)
+    out = []
+    for r in rows:
+        rep = r.get("report") or {}
+        ai = rep.get("ai") or {}
+        out.append({
+            "date": r.get("report_date"),
+            "mode": r.get("mode"),
+            "stats": rep.get("stats", {}),
+            "self_grade": ai.get("self_grade"),
+            "day_summary": ai.get("day_summary"),
+        })
+    return out
+
+
+@router.get("/reports/{report_date}")
+async def get_report(report_date: str):
+    import re
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", report_date):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    row = await db.get_daily_report(report_date)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No report for {report_date}")
+    return row
+
+
+@router.post("/reports/generate")
+async def generate_report_now(request: Request):
+    """Force-generate today's report immediately (also runs after close at 15:45)."""
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
+    reporter = getattr(request.app.state, "reporter", None)
+    if reporter is None:
+        raise HTTPException(status_code=503, detail="Reporter not initialized")
+    report = await reporter.generate()
+    return {"ok": True, "date": report.get("date"), "stats": report.get("stats", {})}
+
+
+@router.post("/news/scan")
+async def news_scan_now(request: Request):
+    """Force a news fetch + AI analysis right now."""
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
+    news_brain = getattr(request.app.state, "news_brain", None)
+    if news_brain is None:
+        raise HTTPException(status_code=503, detail="News brain not initialized")
+    analysis = await news_brain.scan()
+    if not analysis:
+        return {"ok": False, "error": "No headlines fetched or AI analysis failed"}
+    return {"ok": True, "sentiment": analysis.get("overall_sentiment"),
+            "score": analysis.get("sentiment_score")}
+
+
+@router.get("/news/today")
+async def news_today():
+    date = _today_ist_date()
+    return {
+        "date": date,
+        "analysis": await db.get_news_analysis(date) or {},
+        "items": await db.get_news_items(date, limit=40),
+    }
+
+
+@router.get("/ai/strategies")
+async def ai_strategies():
+    """Strategies the bot has invented on its own (Strategy Lab)."""
+    return await db.get_ai_strategies()
+
+
+@router.get("/ai/knowledge")
+async def ai_knowledge(limit: int = 60, category: Optional[str] = None):
+    limit = max(1, min(limit, 200))
+    return await db.get_knowledge(limit=limit, category=category)
+
+
+@router.get("/ai/suggestions")
+async def ai_suggestions():
+    """Feature requests the AI brain has made for its own improvement."""
+    return await db.get_ai_suggestions()
