@@ -1,0 +1,43 @@
+# ============ Core Framework ============
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+python-dotenv==1.0.0
+
+# ============ Exchange Integration ============
+python-binance==1.0.17
+websocket-client==1.6.4
+
+# ============ Data & Storage ============
+aiosqlite==0.19.0
+pandas==2.1.3
+numpy==1.26.2
+
+# ============ Technical Analysis ============
+ta-lib==0.4.28
+pandas-ta==0.3.14b0
+
+# ============ Scheduling & Async ============
+APScheduler==3.10.4
+
+# ============ Market Data & Utils ============
+yfinance==0.2.32
+curl-cffi==0.5.9
+requests==2.31.0
+
+# ============ Alerts & Notifications ============
+python-telegram-bot==20.3
+
+# ============ Testing ============
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+
+# ============ Logging & Monitoring ============
+python-json-logger==2.0.7
+
+# ============ Dev & Optional ============
+black==23.12.0
+flake8==6.1.0
+mypy==1.7.1
+ipython==8.18.1
