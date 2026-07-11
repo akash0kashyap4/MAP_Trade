@@ -87,6 +87,40 @@
   .hdr-badge.waiting { color: var(--amber); border-color: var(--amber); }
   .hdr-badge.paper   { color: var(--amber); }
   .hdr-badge.next    { color: var(--text-dim); border-color: var(--grid); font-size: 10px; }
+  button.hdr-badge {
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--label);
+    transition: box-shadow 0.15s, background 0.15s;
+  }
+  button.hdr-badge.paper:hover     { background: rgba(255,170,0,0.1);  box-shadow: 0 0 8px rgba(255,170,0,0.3); }
+  button.hdr-badge.live-mode       { color: var(--red); border-color: var(--red); animation: pulse 2s ease-in-out infinite; }
+  button.hdr-badge.live-mode:hover { background: rgba(255,51,85,0.1); box-shadow: 0 0 8px rgba(255,51,85,0.3); }
+  button.hdr-badge:disabled        { opacity: 0.5; cursor: wait; animation: none; }
+
+  /* Confirmation modal */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-box {
+    background: var(--bg2);
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    padding: 22px 26px;
+    max-width: 420px; width: calc(100% - 32px);
+    box-shadow: 0 0 40px rgba(255,51,85,0.15);
+  }
+  .modal-title {
+    font-family: var(--label);
+    font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    color: var(--red);
+    margin-bottom: 10px;
+  }
+  .modal-text { font-size: 12px; color: var(--text); line-height: 1.6; margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
   .feed-dot {
     width: 7px; height: 7px;
     border-radius: 50%;
@@ -489,43 +523,6 @@
   .bias-tag.BEARISH  { color: var(--red);   border: 1px solid var(--red);   }
   .bias-tag.NEUTRAL  { color: var(--amber); border: 1px solid var(--amber); }
 
-  /* ── BOTTOM TRADE LOG ── */
-  .trade-log {
-    background: var(--bg2);
-    border-top: 1px solid var(--grid);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-  .log-title {
-    font-family: var(--label);
-    font-size: 9px;
-    letter-spacing: 3px;
-    color: var(--text-dim);
-    padding: 4px 16px;
-    border-bottom: 1px solid var(--grid);
-  }
-  .log-scroll { flex: 1; overflow-y: auto; padding: 4px 16px; }
-  .log-scroll::-webkit-scrollbar { height: 2px; width: 2px; }
-  .log-entry {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    padding: 2px 0;
-    font-size: 11px;
-    white-space: nowrap;
-    animation: flashIn 0.4s ease-out;
-    border-bottom: 1px solid rgba(26,26,46,0.3);
-    width: 100%;
-  }
-  @keyframes flashIn { 0%{background:rgba(0,212,255,0.08)} 100%{background:transparent} }
-  .log-ts    { color: var(--text-dim); min-width: 50px; }
-  .log-inst  { color: var(--cyan); font-family: var(--label); font-weight: 600; min-width: 80px; }
-  .log-action { font-family: var(--label); font-weight: 700; min-width: 70px; }
-  .log-price { min-width: 80px; }
-  .log-pnl   { min-width: 90px; font-weight: 600; }
-  .log-reason { color: var(--text-dim); }
-
   /* Flash cells */
   @keyframes flashGreen { 0%{box-shadow:0 0 0 1px var(--green)} 100%{box-shadow:none} }
   @keyframes flashRed   { 0%{box-shadow:0 0 0 1px var(--red)}   100%{box-shadow:none} }
@@ -565,7 +562,7 @@
   .tf-btn:hover { border-color: var(--cyan); color: var(--cyan); }
   .tf-btn.active { background: rgba(0,212,255,0.12); border-color: var(--cyan); color: var(--cyan); }
 
-  /* Bottom log bar */
+  /* ── BOTTOM TRADE LOG BAR ── */
   .trade-log {
     background: var(--bg2);
     border-top: 1px solid var(--grid);
@@ -589,7 +586,9 @@
     gap: 12px;
     font-size: 11px;
     white-space: nowrap;
+    animation: flashIn 0.4s ease-out;
   }
+  @keyframes flashIn { 0%{background:rgba(0,212,255,0.08)} 100%{background:transparent} }
   .log-ts    { color: var(--text-dim); min-width: 50px; }
   .log-inst  { color: var(--cyan); font-family: var(--label); font-weight: 600; min-width: 80px; }
   .log-action { font-family: var(--label); font-weight: 700; min-width: 70px; }
@@ -607,7 +606,7 @@
     <div class="header-clock" id="clock">--:--:-- IST</div>
     <div class="hdr-badge closed" id="mkt-badge"><span class="feed-dot" id="feed-dot"></span><span id="feed-status">CLOSED</span></div>
     <div class="status-tag" id="ai-status">WAITING</div>
-    <div class="hdr-badge paper">● PAPER MODE</div>
+    <button class="hdr-badge paper" id="mode-btn" onclick="requestModeSwitch()" title="Click to switch trading mode" aria-live="polite">● PAPER MODE</button>
     <div class="hdr-badge next">NEXT CHECK <span id="next-check">--:--</span></div>
   </div>
 
@@ -820,6 +819,12 @@
         <!-- SECTION: Settings -->
         <div id="sec-settings" class="nav-section-panel" style="display:none">
           <div class="settings-grid">
+            <div class="settings-card">
+              <h4>TRADING MODE</h4>
+              <p>Paper mode simulates fills with dummy capital. Live mode places real orders via AngelOne — credentials are validated before the switch is applied.</p>
+              <div id="mode-btn-group"><!-- buttons rendered from TRADING_MODES registry --></div>
+              <div id="mode-error" style="display:none;margin-top:6px;font-size:10px;color:var(--red)"></div>
+            </div>
             <div class="settings-card">
               <h4>BOT STATE</h4>
               <p>Pause or resume the runtime loop. When paused, the bot stops taking new market actions.</p>
@@ -1060,6 +1065,18 @@
 
 </div>
 
+<!-- MODE SWITCH CONFIRMATION MODAL -->
+<div class="modal-overlay" id="mode-modal" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="mode-modal-title">
+  <div class="modal-box">
+    <div class="modal-title" id="mode-modal-title">⚠ SWITCH TO LIVE TRADING</div>
+    <div class="modal-text" id="mode-modal-text"></div>
+    <div class="modal-actions">
+      <button class="settings-btn" onclick="closeModeModal()">CANCEL</button>
+      <button class="settings-btn danger" id="mode-modal-confirm">CONFIRM</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── SSE ──
 const es = new EventSource('/stream');
@@ -1156,8 +1173,9 @@ function updateCandles(candles) {
   // Draw Grid Lines (Horizontal)
   ctx.strokeStyle = 'rgba(0, 212, 255, 0.05)';
   ctx.lineWidth = 1;
-  ctx.font = '9px var(--mono)';
-  ctx.fillStyle = 'var(--text-dim)';
+  // canvas doesn't understand CSS var() — use literal values
+  ctx.font = '9px "IBM Plex Mono", monospace';
+  ctx.fillStyle = '#6b6b80';
   ctx.textAlign = 'left';
 
   const gridSteps = 4;
@@ -1431,8 +1449,12 @@ function updateAIStatus(status) {
 function updateFeedStatus(status) {
   const dot = document.getElementById('feed-dot');
   const lbl = document.getElementById('feed-status');
+  const badge = document.getElementById('mkt-badge');
   dot.className = `feed-dot ${status}`;
   lbl.textContent = (status || 'closed').toUpperCase();
+  if (badge) {
+    badge.className = `hdr-badge ${status === 'live' ? 'live' : status === 'reconnecting' ? 'waiting' : 'closed'}`;
+  }
 }
 
 // ── BIAS ──
@@ -1541,67 +1563,125 @@ async function loadRules() {
 setInterval(loadRules, 60000);
 loadRules();
 
-// ── SETTINGS / RISK CONFIG ──
-async function loadRiskConfig_unused() {
+// ── TRADING MODE ──
+// Registry of trading modes. To add a new mode later, add an entry here and in
+// the backend TRADING_MODES dict — the header badge, settings buttons, and
+// confirmation flow all render from this object.
+const TRADING_MODES = {
+  paper: {
+    label: '● PAPER MODE',
+    btnLabel: 'PAPER',
+    className: 'paper',
+    color: 'var(--amber)',
+    confirmText: null,
+  },
+  live: {
+    label: '● LIVE MODE',
+    btnLabel: 'LIVE',
+    className: 'live-mode',
+    color: 'var(--red)',
+    confirmText: 'Live trading places REAL orders through your AngelOne account using REAL money. ' +
+                 'Stop-losses, targets and the daily loss limit still apply, but losses are real. ' +
+                 'AngelOne credentials will be validated before the switch.',
+  },
+};
+let _tradingMode = 'paper';
+let _modeSwitching = false;
+
+function _applyModeUI(mode) {
+  _tradingMode = mode;
+  const def = TRADING_MODES[mode] || TRADING_MODES.paper;
+  const btn = document.getElementById('mode-btn');
+  if (btn) {
+    btn.textContent = def.label;
+    btn.className   = `hdr-badge ${def.className}`;
+    btn.disabled    = false;
+  }
+  _renderModeButtons();
+}
+
+function _renderModeButtons() {
+  const group = document.getElementById('mode-btn-group');
+  if (!group) return;
+  group.innerHTML = Object.entries(TRADING_MODES).map(([key, def]) => {
+    const active = key === _tradingMode;
+    const cls = key === 'live' ? 'settings-btn danger' : 'settings-btn';
+    const style = active ? `background:${def.color};color:var(--bg);border-color:${def.color}` : '';
+    return `<button class="${cls}" style="${style}" ${active ? 'disabled' : ''}
+              onclick="requestModeSwitch('${key}')">${def.btnLabel}${active ? ' ✓' : ''}</button>`;
+  }).join('');
+}
+
+function _showModeError(msg) {
+  const el = document.getElementById('mode-error');
+  if (!el) { _showOverrideMsg(msg, false); return; }
+  el.style.display = 'block';
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+
+async function loadTradingMode() {
   try {
-    const res = await fetch('/api/config/risk');
-    const data = await res.json();
-    const grid = document.getElementById('risk-config-grid');
-    if (!grid) return;
+    const r = await fetch('/api/trading/mode');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.mode) _applyModeUI(d.mode);
+  } catch (e) { console.warn('[mode] load failed:', e); }
+}
 
-    const entries = [
-      ['paper_trade', data.paper_trade ? 'PAPER' : 'LIVE'],
-      ['lots', data.lots],
-      ['max_positions', data.max_positions],
-      ['max_daily_loss', data.max_daily_loss],
-      ['fallback_sl_pct', data.fallback_sl_pct],
-      ['fallback_target_pct', data.fallback_target_pct],
-      ['stop_loss_rs', data.stop_loss_rs],
-      ['target_rs', data.target_rs],
-      ['min_confidence', data.min_confidence],
-      ['trailing_sl_trigger', data.trailing_sl_trigger],
-      ['trailing_sl_step', data.trailing_sl_step],
-      ['bot_paused', data.bot_paused ? 'YES' : 'NO'],
-      ['new_entries_enabled', data.new_entries_enabled ? 'YES' : 'NO'],
-      ['initial_capital', data.initial_capital],
-    ];
+// Called from the header badge (no arg = toggle) or settings buttons (explicit mode)
+function requestModeSwitch(mode) {
+  if (_modeSwitching) return;
+  if (!mode) mode = _tradingMode === 'paper' ? 'live' : 'paper';
+  if (mode === _tradingMode) return;
+  const def = TRADING_MODES[mode];
+  if (!def) return;
 
-    grid.innerHTML = entries.map(([k, v]) => `
-      <div class="risk-item">
-        <div class="risk-key">${String(k).replace(/_/g, ' ').toUpperCase()}</div>
-        <div class="risk-val">${v ?? '—'}</div>
-      </div>
-    `).join('');
-  } catch (e) {
-    const grid = document.getElementById('risk-config-grid');
-    if (grid) grid.innerHTML = `<div style="color:var(--red);font-size:11px">failed to load risk config</div>`;
+  if (def.confirmText) {
+    const modal = document.getElementById('mode-modal');
+    document.getElementById('mode-modal-title').textContent = `⚠ SWITCH TO ${def.btnLabel} TRADING`;
+    document.getElementById('mode-modal-text').textContent = def.confirmText;
+    const confirmBtn = document.getElementById('mode-modal-confirm');
+    confirmBtn.onclick = () => { closeModeModal(); _performModeSwitch(mode); };
+    modal.style.display = 'flex';
+    confirmBtn.focus();
+  } else {
+    _performModeSwitch(mode);
   }
 }
 
-async function setBotPaused(paused) {
-  await fetch('/api/override/state', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paused }),
-  });
-  await loadRiskConfig();
+function closeModeModal() {
+  document.getElementById('mode-modal').style.display = 'none';
 }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModeModal();
+});
 
-async function setNewEntriesEnabled(enabled) {
-  await fetch('/api/override/state', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ new_entries_enabled: enabled }),
-  });
-  await loadRiskConfig();
-}
-
-async function triggerEmergencySquareOff() {
-  if (!confirm('Emergency square-off will close all open positions and pause the bot. Continue?')) return;
-  const res = await fetch('/api/override/square-off', { method: 'POST' });
-  const data = await res.json().catch(() => ({}));
-  alert(`Emergency square-off complete. Closed ${data.closed_count ?? 0} position(s).`);
-  await loadRiskConfig();
+async function _performModeSwitch(mode) {
+  _modeSwitching = true;
+  const btn = document.getElementById('mode-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '● SWITCHING…'; }
+  try {
+    const r = await fetch('/api/trading/set-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      _applyModeUI(mode);
+      _showOverrideMsg(`Trading mode switched to ${mode.toUpperCase()}.`, true);
+    } else {
+      _applyModeUI(_tradingMode);  // restore badge
+      _showModeError(d.error || d.detail || `Failed to switch mode (HTTP ${r.status})`);
+    }
+  } catch (e) {
+    _applyModeUI(_tradingMode);
+    _showModeError('Request failed: ' + e);
+  } finally {
+    _modeSwitching = false;
+    await loadRiskConfig();
+  }
 }
 
 // ── BACKTEST ──
@@ -1954,6 +2034,7 @@ function setNav(el) {
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
 })();
 loadRiskConfig();
+loadTradingMode();
 
 // ── Settings panel ─────────────────────────────────────────────────────────
 let _botPaused = false;
@@ -1971,7 +2052,8 @@ async function loadRiskConfig() {
     const grid = document.getElementById('risk-config-grid');
     if (!grid) return;
     const rows = [
-      ['Paper Trade',       d.paper_trade ? 'YES' : 'LIVE', d.paper_trade ? 'var(--amber)' : 'var(--red)'],
+      ['Trading Mode',      (d.trading_mode || (d.paper_trade ? 'paper' : 'live')).toUpperCase(),
+                            d.paper_trade ? 'var(--amber)' : 'var(--red)'],
       ['Lots',              d.lots,                          'var(--cyan)'],
       ['Max Positions',     d.max_positions,                 'var(--text)'],
       ['Max Daily Loss',    `\u20b9${(d.max_daily_loss||0).toLocaleString()}`, 'var(--red)'],
@@ -2072,6 +2154,9 @@ async function confirmSquareOff() {
 function _syncOverrideState(payload) {
   if (payload.bot_paused  !== undefined) _botPaused  = payload.bot_paused;
   if (payload.new_entries !== undefined) _newEntries = payload.new_entries;
+  if (payload.trading_mode && payload.trading_mode !== _tradingMode && !_modeSwitching) {
+    _applyModeUI(payload.trading_mode);
+  }
   _updateOverrideBtns();
 }
 
