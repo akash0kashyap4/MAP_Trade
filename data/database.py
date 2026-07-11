@@ -110,9 +110,13 @@ async def _pg_pool():
 
 # ── SQLite helpers ────────────────────────────────────────────────────────────
 
-async def _sqlite_conn():
+def _sqlite_conn():
+    """Return an aiosqlite connection context — use `async with _sqlite_conn() as db`.
+    Do NOT await it first: awaiting starts the worker thread, and entering the
+    context manager afterwards starts it again ("threads can only be started
+    once" on aiosqlite >= 0.20), which broke every DB operation."""
     import aiosqlite
-    return await aiosqlite.connect(_SQLITE_PATH)
+    return aiosqlite.connect(_SQLITE_PATH)
 
 
 # ── Public init ───────────────────────────────────────────────────────────────
@@ -120,7 +124,7 @@ async def _sqlite_conn():
 async def init_db():
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 for stmt in _SQLITE_DDL.strip().split(";"):
                     s = stmt.strip()
                     if s:
@@ -180,7 +184,7 @@ async def insert_candle(instrument: str, interval: str, candle: list):
     ts, o, h, low, c, vol, oi = candle[0], candle[1], candle[2], candle[3], candle[4], candle[5], candle[6]
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 await db.execute(
                     "INSERT OR IGNORE INTO candles (instrument,interval,timestamp,open,high,low,close,volume,oi) "
                     "VALUES (?,?,?,?,?,?,?,?,?)",
@@ -218,7 +222,7 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
     )
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 cur = await db.execute(
                     "INSERT INTO signals (timestamp,instrument,action,strike,expiry,confidence,reason,"
                     "indicators,ai_response,decision_log,market_context,signal_quality) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -249,7 +253,7 @@ async def insert_signal(signal: dict, decision_log: dict | None = None,
 async def get_decision_log(signal_id: int) -> dict | None:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute("SELECT decision_log FROM signals WHERE id=?", (signal_id,)) as cur:
                     row = await cur.fetchone()
@@ -283,7 +287,7 @@ async def insert_trade(trade: dict) -> int:
     )
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 cur = await db.execute(
                     "INSERT INTO trades (trade_type,instrument,action,strike,expiry,entry_time,entry_price,"
                     "exit_time,exit_price,exit_reason,quantity,pnl_raw,pnl_final,signal_id,confidence,"
@@ -319,7 +323,7 @@ async def update_trade_exit(trade_db_id: int, exit_time: str, exit_price: float,
                             fees_total: float | None = None, slippage_cost: float | None = None):
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 await db.execute(
                     "UPDATE trades SET exit_time=?,exit_price=?,exit_reason=?,pnl_raw=?,pnl_final=?,"
                     "fees_total=?,slippage_cost=? WHERE id=?",
@@ -353,7 +357,7 @@ def _sqlite_dict_factory(cursor, row):
 async def get_today_realized_pnl() -> float:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 async with db.execute(
                     "SELECT COALESCE(SUM(pnl_final),0) as total FROM trades "
                     "WHERE date(entry_time)=date('now') AND exit_time IS NOT NULL"
@@ -378,7 +382,7 @@ async def get_today_realized_pnl() -> float:
 async def get_total_realized_pnl() -> float:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 async with db.execute(
                     "SELECT COALESCE(SUM(pnl_final),0) as total FROM trades WHERE exit_time IS NOT NULL"
                 ) as cur:
@@ -401,7 +405,7 @@ async def get_total_realized_pnl() -> float:
 async def get_today_trades() -> list:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute(
                     "SELECT * FROM trades WHERE date(entry_time)=date('now') ORDER BY entry_time"
@@ -427,7 +431,7 @@ async def get_today_trades() -> list:
 async def get_open_trades() -> list:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute(
                     "SELECT * FROM trades WHERE exit_time IS NULL ORDER BY entry_time"
@@ -454,7 +458,7 @@ async def get_trades(days: int = 30, completed_only: bool = False) -> list:
     if _USE_SQLITE:
         try:
             extra = "AND exit_time IS NOT NULL" if completed_only else ""
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute(
                     f"SELECT * FROM trades WHERE entry_time >= datetime('now','-{days} days') {extra} ORDER BY entry_time"
@@ -481,7 +485,7 @@ async def get_trades(days: int = 30, completed_only: bool = False) -> list:
 async def get_latest_rules() -> dict:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 async with db.execute(
                     "SELECT rules FROM learning_rules ORDER BY updated_at DESC LIMIT 1"
                 ) as cur:
@@ -509,7 +513,7 @@ async def save_learning_rules(rules: dict, stats: dict):
     vals = (_now_ist(), json.dumps(rules), stats.get("win_rate", 0.0), stats.get("sharpe", 0.0), 1)
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 await db.execute(
                     "INSERT INTO learning_rules (updated_at,rules,win_rate,sharpe,version) VALUES (?,?,?,?,?)", vals
                 )
@@ -535,7 +539,7 @@ async def save_backtest_run(config: dict, stats: dict):
     )
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 await db.execute(
                     "INSERT INTO backtest_runs (run_at,config,stats,total_trades,win_rate,profit_factor,max_drawdown,sharpe) "
                     "VALUES (?,?,?,?,?,?,?,?)", vals
@@ -558,7 +562,7 @@ async def save_backtest_run(config: dict, stats: dict):
 async def get_signal(signal_id: int) -> dict | None:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute("SELECT * FROM signals WHERE id=?", (signal_id,)) as cur:
                     return await cur.fetchone()
@@ -579,7 +583,7 @@ async def get_signal(signal_id: int) -> dict | None:
 async def get_trade(trade_id: int) -> dict | None:
     if _USE_SQLITE:
         try:
-            async with await _sqlite_conn() as db:
+            async with _sqlite_conn() as db:
                 db.row_factory = _sqlite_dict_factory
                 async with db.execute("SELECT * FROM trades WHERE id=?", (trade_id,)) as cur:
                     return await cur.fetchone()

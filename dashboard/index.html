@@ -38,7 +38,7 @@
   /* ── LAYOUT ── */
   .terminal {
     display: grid;
-    grid-template-rows: 48px 1fr 32px;
+    grid-template-rows: 48px 1fr 32px 26px;
     height: 100vh;
   }
 
@@ -595,6 +595,58 @@
   .log-price { min-width: 80px; }
   .log-pnl   { min-width: 90px; font-weight: 600; }
   .log-reason { color: var(--text-dim); }
+
+  /* ── BOTTOM TICKER TAPE ── */
+  .ticker-bar {
+    background: #04040a;
+    border-top: 1px solid var(--grid);
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+    height: 26px;
+  }
+  .ticker-label {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 12px;
+    font-family: var(--label);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--amber);
+    background: var(--bg2);
+    border-right: 1px solid var(--grid);
+    white-space: nowrap;
+  }
+  .ticker-viewport {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+  }
+  .ticker-track {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    will-change: transform;
+    animation: tickerScroll var(--ticker-dur, 40s) linear infinite;
+  }
+  .ticker-viewport:hover .ticker-track { animation-play-state: paused; }
+  @keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .ticker-item {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 10px;
+    padding: 0 18px;
+    border-right: 1px solid rgba(26,26,46,0.6);
+  }
+  .ticker-time   { color: var(--text-dim); }
+  .ticker-inst   { color: var(--cyan); font-family: var(--label); font-weight: 600; letter-spacing: 1px; }
+  .ticker-action { font-family: var(--label); font-weight: 700; letter-spacing: 1px; }
+  @media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
 </style>
 </head>
 <body>
@@ -1063,6 +1115,16 @@
     </div>
   </div>
 
+  <!-- BOTTOM TICKER TAPE -->
+  <div class="ticker-bar" aria-label="Live market ticker">
+    <div class="ticker-label">⚡ TICKER</div>
+    <div class="ticker-viewport">
+      <div class="ticker-track" id="ticker-track">
+        <span class="ticker-item" style="color:var(--text-dim)">waiting for market data…</span>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- MODE SWITCH CONFIRMATION MODAL -->
@@ -1300,8 +1362,10 @@ setInterval(updateClock, 1000);
 updateClock();
 
 // ── PRICES ──
+const _priceData = {};  // full last price payload per instrument (for the ticker)
 function updatePrices(prices) {
   for (const [key, val] of Object.entries(prices)) {
+    _priceData[key] = val;
     const ltpEl = document.getElementById(`ltp-${key}`);
     const chgEl = document.getElementById(`chg-${key}`);
     if (!ltpEl) continue;
@@ -1490,6 +1554,84 @@ function addTradeLog(entry) {
   if (scroll.children.length > 100) scroll.removeChild(scroll.lastChild);
 }
 
+// ── BOTTOM TICKER TAPE ──
+// Scrolls today's real trades (from the DB) across the bottom of the terminal.
+// Falls back to live index prices until the first trade of the day.
+let _tickerKey = '';
+
+function _tickerTradeItem(t) {
+  const opt    = t.action?.includes('CE') ? 'CE' : t.action?.includes('PE') ? 'PE' : '';
+  const isOpen = !t.exit_time;
+  const time   = ((isOpen ? t.entry_time : t.exit_time) || '').substring(11, 16);
+  const inst   = `${t.instrument || ''} ${t.strike || ''}${opt}`.trim();
+
+  let action, actColor, pnlHtml = '';
+  if (isOpen) {
+    action   = t.action || 'OPEN';
+    actColor = action === 'BUY_PE' ? 'var(--red)' : 'var(--green)';
+    pnlHtml  = `<span style="color:var(--cyan)">OPEN</span>`;
+  } else {
+    const reason = (t.exit_reason || '').toUpperCase();
+    action   = reason.includes('TARGET') ? 'TARGET HIT'
+             : reason.includes('SL')     ? 'SL HIT'
+             : 'EXIT';
+    actColor = action === 'TARGET HIT' ? 'var(--green)'
+             : action === 'SL HIT'     ? 'var(--red)'
+             : 'var(--amber)';
+    const pnl = t.pnl_final;
+    if (pnl != null) {
+      const c = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      pnlHtml = `<span style="color:${c};font-weight:600">${pnl >= 0 ? '+' : '−'}₹${Math.abs(Math.round(pnl)).toLocaleString('en-IN')}</span>`;
+    }
+  }
+  return `<span class="ticker-item">
+    <span class="ticker-time">${time}</span>
+    <span class="ticker-inst">${inst}</span>
+    <span class="ticker-action" style="color:${actColor}">${action}</span>
+    ${pnlHtml}
+  </span>`;
+}
+
+function _tickerPriceItem(name, v) {
+  const c = v.chg >= 0 ? 'var(--green)' : 'var(--red)';
+  const sign = v.chg >= 0 ? '+' : '';
+  return `<span class="ticker-item">
+    <span class="ticker-inst">${name}</span>
+    <span style="color:var(--text)">${v.ltp.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+    <span style="color:${c}">${sign}${v.chg.toFixed(2)} (${sign}${v.chg_pct.toFixed(2)}%)</span>
+  </span>`;
+}
+
+function renderTicker(trades) {
+  const track = document.getElementById('ticker-track');
+  if (!track) return;
+
+  let items = (trades || []).slice(-15).map(_tickerTradeItem);
+  let key = 'trades:' + (trades || []).length;
+
+  if (!items.length) {
+    const priced = Object.entries(_priceData).filter(([, v]) => v && v.ltp > 0);
+    if (priced.length) {
+      items = priced.map(([k, v]) => _tickerPriceItem(k === 'BANKNIFTY' ? 'BANK NIFTY' : k === 'NIFTY' ? 'NIFTY 50' : k, v));
+      // refresh price ticker once a minute (a rebuild restarts the scroll)
+      key = 'prices:' + Math.floor(Date.now() / 60000);
+    }
+  }
+  if (!items.length || key === _tickerKey) return;
+  _tickerKey = key;
+
+  let html = items.join('');
+  // pad short content so the loop has no visible gap
+  while ((html.match(/ticker-item/g) || []).length < 8) html += html;
+  track.innerHTML = html + html;  // duplicate exactly once for the seamless −50% loop
+
+  // constant scroll speed (~70 px/s) regardless of content length
+  requestAnimationFrame(() => {
+    const dur = Math.max(20, Math.round(track.scrollWidth / 2 / 70));
+    track.style.setProperty('--ticker-dur', dur + 's');
+  });
+}
+
 // ── TODAY'S TRADES FROM DB ──
 async function loadTodayTrades() {
   try {
@@ -1498,6 +1640,7 @@ async function loadTodayTrades() {
     const tbody = document.getElementById('today-trades-tbody');
 
     if (raw.error) console.warn('[trades/today] DB error:', raw.error);
+    renderTicker(trades);
     if (!trades || !trades.length) {
       tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:8px">no trades today</td></tr>';
       return;
