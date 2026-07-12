@@ -1440,7 +1440,7 @@ es.onmessage = (e) => {
   updatePnL(data.pnl);
   updateFeedStatus(data.feed_status);
   updateBias(data.today_bias);
-  if (data.candles)    updateCandles(data.candles);
+  if (data.candles && data.candles.length) updateCandles(data.candles);  // ignore empty ticks so the chart isn't blanked
   if (data.indicators) updateIndicators(data.indicators);
   if (data.capital)    updateCapital(data.capital);
   if (data.volume)     updateDayVolume(data.volume);
@@ -3068,13 +3068,25 @@ async function setTF(tf, el) {
     if (data.candles && data.candles.length) {
       updateCandles(data.candles);
     } else {
-      if (placeholder) placeholder.style.display = 'flex';
-      if (canvas) { canvas.style.display = 'none'; canvas.style.opacity = '1'; }
+      // No candles from the server (e.g. yfinance blocked / market closed).
+      // Do NOT wipe a chart the SSE feed already drew — only show a message
+      // when there is genuinely nothing on screen.
+      if (canvas) canvas.style.opacity = '1';
+      if (!_chartCandles) _chartMessage(data.note || 'No chart data right now — retrying…');
     }
   } catch (e) {
     console.error('[setTF] fetch failed:', e);
     if (canvas) canvas.style.opacity = '1';
+    if (!_chartCandles) _chartMessage('Chart data unavailable — will retry.');
   }
+}
+
+// Show placeholder text only when the chart has nothing drawn yet.
+function _chartMessage(msg) {
+  const placeholder = document.getElementById('chart-placeholder');
+  const canvas = document.getElementById('chart-canvas');
+  if (placeholder) { placeholder.textContent = msg; placeholder.style.display = 'flex'; }
+  if (canvas) canvas.style.display = 'none';
 }
 
 // ── Mobile drawer ──

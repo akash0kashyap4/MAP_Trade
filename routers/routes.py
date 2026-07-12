@@ -711,10 +711,16 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
 
             df = await loop.run_in_executor(None, _fetch)
             if df.empty:
-                # Serve slightly-stale data rather than an empty chart if we have it.
+                # yfinance often returns nothing from cloud IPs (Yahoo blocks
+                # them). Prefer last-known-good, then the bot's own live-feed
+                # candles, before giving up.
                 if cached:
                     return cached[1]
-                return {"candles": [], "instrument": instrument, "interval": interval}
+                fb = _store_candles_fallback(instrument, max_c)
+                if fb["candles"]:
+                    return fb
+                return {"candles": [], "instrument": instrument, "interval": interval,
+                        "source": "none", "note": "No candle data available from upstream."}
 
             candles = []
             for dt, row in df.iterrows():
@@ -743,7 +749,35 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
             print(f"[candles] error: {e}")
             if cached:
                 return cached[1]  # last-known-good beats a hard error on the chart
+            fb = _store_candles_fallback(instrument, max_c)
+            if fb["candles"]:
+                return fb
             raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _store_candles_fallback(instrument: str, max_c: int) -> dict:
+    """Chart candles from the bot's own live feed (store.today_candles) when
+    yfinance is unavailable. Raw rows are [time, open, high, low, close, volume].
+    Only NIFTY is fed today, and only on a trading day, so this may be empty —
+    callers must handle that."""
+    try:
+        rows = store.today_candles.get(instrument.upper(), [])[-max_c:]
+        candles = [
+            {
+                "time":   str(c[0]),
+                "open":   round(float(c[1]), 2),
+                "high":   round(float(c[2]), 2),
+                "low":    round(float(c[3]), 2),
+                "close":  round(float(c[4]), 2),
+                "volume": int(c[5]) if len(c) > 5 and c[5] else 0,
+            }
+            for c in rows
+        ]
+        return {"candles": candles, "instrument": instrument, "interval": "live",
+                "source": "store"}
+    except Exception as e:
+        print(f"[candles] store fallback error: {e}")
+        return {"candles": [], "instrument": instrument, "interval": "live", "source": "store"}
 
 
 # ── CONFIG / RISK READ-OUT ───────────────────────────────────────────────────
