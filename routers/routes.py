@@ -360,7 +360,10 @@ async def _run_backtest(req: BacktestRequest):
 
 @router.post("/tick")
 async def manual_tick(request: Request):
-    """Manually trigger one market loop tick (for testing)."""
+    """Manually trigger one market loop tick (for testing). Requires authentication."""
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
     trader = request.app.state.trader
     trader._market_open = True
     await trader.market_loop_tick()
@@ -588,16 +591,42 @@ async def _run_learning_sync():
 
 
 # ── TRADING MODE TOGGLE ───────────────────────────────────────────────────────
+# Mode registry — add new modes here (and in dashboard TRADING_MODES) without
+# touching the endpoint logic. `validate` runs before the switch is applied.
+
+def _validate_live_mode() -> None:
+    """Live trading needs AngelOne credentials and a working login."""
+    import os
+    import config
+    missing = [
+        k for k in ("ANGEL_API_KEY", "ANGEL_CLIENT_ID", "ANGEL_PASSWORD", "ANGEL_TOTP_SECRET")
+        if not (getattr(config, k, "") or os.getenv(k, "")).strip()
+    ]
+    if missing:
+        raise ValueError(f"Missing env vars: {', '.join(missing)}")
+    from angelone.auth import get_angel_client
+    get_angel_client()  # raises on login failure
+
+
+TRADING_MODES: dict[str, dict] = {
+    "paper": {"paper_trade": True,  "validate": None},
+    "live":  {"paper_trade": False, "validate": _validate_live_mode},
+}
+
 
 class ModeRequest(BaseModel):
-    mode: str  # "paper" | "live"
+    mode: str  # one of TRADING_MODES
+
+
+def current_trading_mode() -> str:
+    import config
+    return "paper" if config.TRADING["paper_trade"] else "live"
 
 
 @router.get("/trading/mode")
 async def get_trading_mode():
-    """Return current trading mode."""
-    import config
-    return {"mode": "paper" if config.TRADING["paper_trade"] else "live"}
+    """Return current trading mode and all available modes."""
+    return {"mode": current_trading_mode(), "available": list(TRADING_MODES)}
 
 
 @router.get("/candles")
@@ -680,6 +709,10 @@ async def get_risk_config():
     t = config.TRADING
     return {
         "paper_trade":         t.get("paper_trade", True),
+        "trading_mode":        current_trading_mode(),
+        "initial_capital":     config.INITIAL_CAPITAL,
+        "stop_loss_rs":        t.get("stop_loss_rs", 500),
+        "target_rs":           t.get("target_rs", 1000),
         "lots":                t.get("lots", 1),
         "max_positions":       t.get("max_positions", 2),
         "max_daily_loss":      t.get("max_daily_loss", 5000),
@@ -724,8 +757,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
     print(msg)
     try:
-        from groww.oauth import send_telegram
-        await send_telegram(f"[Ragi] {msg}")
+        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[Ragi] {msg}")
     except Exception:
         pass
 
@@ -735,129 +767,152 @@ async def override_state(req: OverrideStateRequest, request: Request):
 @router.post("/override/square-off")
 async def emergency_square_off(request: Request):
     """
-    Emergency circuit breaker: close all open option positions at market price,
-    pause the bot, and broadcast a Telegram notification.
+    Emergency circuit breaker: close all open positions at market price
+    (real exit orders for live positions), pause the bot, and notify Telegram.
     Requires authentication.
     """
     _check_same_origin(request)
     from main import require_auth
     require_auth(request)
 
-    positions_snapshot = list(store.positions)
-    if not positions_snapshot:
-        store.bot_paused = True
-        return {"ok": True, "closed": 0, "message": "No open positions. Bot paused."}
-
-    closed = []
-    errors = []
-    for pos in positions_snapshot:
-        try:
-            ltp   = pos.get("ltp") or pos.get("entry", 0.0)
-            qty   = pos.get("quantity", 0)
-            pnl   = round((ltp - pos["entry"]) * qty, 2)
-            instr = pos["instrument"]
-            strike = pos["strike"]
-            opt_type = pos["type"]
-
-            store.realized_pnl  = round(store.realized_pnl + pnl, 2)
-            store.cumulative_pnl = round(store.cumulative_pnl + pnl, 2)
-            store.remove_position(instr, strike, opt_type)
-
-            closed.append({
-                "instrument": instr, "strike": strike, "type": opt_type,
-                "entry": pos["entry"], "exit": ltp, "pnl": pnl, "qty": qty,
-            })
-        except Exception as e:
-            errors.append(str(e))
-
-    store.bot_paused = True
-
-    summary_lines = [
-        f"  {c['instrument']} {c['strike']}{c['type']} entry={c['entry']} exit={c['exit']} pnl=₹{c['pnl']}"
-        for c in closed
-    ]
-    total_pnl = sum(c["pnl"] for c in closed)
-    tg_msg = (
-        f"[Ragi] 🚨 EMERGENCY SQUARE-OFF\n"
-        f"Closed {len(closed)} position(s), total P&L: ₹{total_pnl:,.2f}\n"
-        + "\n".join(summary_lines)
-        + "\nBot is now PAUSED."
-    )
-    try:
-        from groww.oauth import send_telegram
-        await send_telegram(tg_msg)
-    except Exception:
-        pass
-
-    print(tg_msg)
+    trader = request.app.state.trader
+    pnl_before = store.realized_pnl
+    closed = await trader.emergency_square_off()
+    total_pnl = round(store.realized_pnl - pnl_before, 2)
     return {
-        "ok":      True,
-        "closed":  len(closed),
-        "total_pnl": round(total_pnl, 2),
-        "positions": closed,
-        "errors":  errors,
+        "ok":         True,
+        "closed":     closed,
+        "total_pnl":  total_pnl,
         "bot_paused": True,
     }
 
 
 @router.post("/trading/set-mode")
-async def set_trading_mode(req: ModeRequest):
+async def set_trading_mode(req: ModeRequest, request: Request):
     """
     Switch trading mode at runtime without restarting the bot.
     Switching to 'live' requires AngelOne credentials in env.
+    Requires authentication.
     """
     import config
 
-    if req.mode not in ("paper", "live"):
-        raise HTTPException(status_code=400, detail="mode must be 'paper' or 'live'")
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
 
-    if req.mode == "live":
-        # Validate AngelOne credentials are configured
-        missing = [k for k in ("ANGEL_API_KEY", "ANGEL_CLIENT_ID", "ANGEL_PASSWORD", "ANGEL_TOTP_SECRET")
-                   if not config.__dict__.get(k) and not __import__("os").getenv(k, "").strip()]
-        if missing:
-            return JSONResponse(
-                status_code=400,
-                content={"ok": False, "error": f"Missing env vars: {', '.join(missing)}"}
-            )
-        # Test AngelOne login
+    mode_def = TRADING_MODES.get(req.mode)
+    if mode_def is None:
+        raise HTTPException(status_code=400,
+                            detail=f"mode must be one of {sorted(TRADING_MODES)}")
+
+    loop = asyncio.get_running_loop()
+    if mode_def["validate"] is not None:
         try:
-            from angelone.auth import get_angel_client
-            get_angel_client()
+            # Broker login does blocking network I/O — keep it off the event loop
+            await loop.run_in_executor(None, mode_def["validate"])
         except Exception as e:
-            return JSONResponse(
-                status_code=400,
-                content={"ok": False, "error": f"AngelOne login failed: {e}"}
-            )
+            return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
 
-    config.TRADING["paper_trade"] = (req.mode == "paper")
+    config.TRADING["paper_trade"] = mode_def["paper_trade"]
     print(f"[routes] Trading mode changed → {req.mode.upper()}")
-    await send_telegram(f"⚙️ Trading mode changed to: {req.mode.upper()}")
+    try:
+        await loop.run_in_executor(None, send_telegram,
+                                   f"⚙️ Trading mode changed to: {req.mode.upper()}")
+    except Exception:
+        pass
     return {"ok": True, "mode": req.mode}
 
 
-class OverrideModeRequest(BaseModel):
-    paused: Optional[bool] = None
-    new_entries_enabled: Optional[bool] = None
+# ─── Reports / AI learning endpoints ─────────────────────────────────────────
+
+def _today_ist_date() -> str:
+    import pytz
+    from datetime import datetime
+    return datetime.now(pytz.timezone("Asia/Kolkata")).strftime("%Y-%m-%d")
 
 
-@router.post("/override/state")
-async def set_override_state(req: OverrideModeRequest):
-    """Pause/resume the bot and control new entry flow at runtime."""
-    if req.paused is not None:
-        store.bot_paused = req.paused
-    if req.new_entries_enabled is not None:
-        store.new_entries_enabled = req.new_entries_enabled
+@router.get("/reports")
+async def list_reports(limit: int = 30):
+    """Daily report summaries, newest first."""
+    limit = max(1, min(limit, 120))
+    rows = await db.get_daily_reports(limit=limit)
+    out = []
+    for r in rows:
+        rep = r.get("report") or {}
+        ai = rep.get("ai") or {}
+        out.append({
+            "date": r.get("report_date"),
+            "mode": r.get("mode"),
+            "stats": rep.get("stats", {}),
+            "self_grade": ai.get("self_grade"),
+            "day_summary": ai.get("day_summary"),
+        })
+    return out
+
+
+@router.get("/reports/{report_date}")
+async def get_report(report_date: str):
+    import re
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", report_date):
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    row = await db.get_daily_report(report_date)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No report for {report_date}")
+    return row
+
+
+@router.post("/reports/generate")
+async def generate_report_now(request: Request):
+    """Force-generate today's report immediately (also runs after close at 15:45)."""
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
+    reporter = getattr(request.app.state, "reporter", None)
+    if reporter is None:
+        raise HTTPException(status_code=503, detail="Reporter not initialized")
+    report = await reporter.generate()
+    return {"ok": True, "date": report.get("date"), "stats": report.get("stats", {})}
+
+
+@router.post("/news/scan")
+async def news_scan_now(request: Request):
+    """Force a news fetch + AI analysis right now."""
+    _check_same_origin(request)
+    from main import require_auth
+    require_auth(request)
+    news_brain = getattr(request.app.state, "news_brain", None)
+    if news_brain is None:
+        raise HTTPException(status_code=503, detail="News brain not initialized")
+    analysis = await news_brain.scan()
+    if not analysis:
+        return {"ok": False, "error": "No headlines fetched or AI analysis failed"}
+    return {"ok": True, "sentiment": analysis.get("overall_sentiment"),
+            "score": analysis.get("sentiment_score")}
+
+
+@router.get("/news/today")
+async def news_today():
+    date = _today_ist_date()
     return {
-        "ok": True,
-        "bot_paused": store.bot_paused,
-        "new_entries_enabled": store.new_entries_enabled,
+        "date": date,
+        "analysis": await db.get_news_analysis(date) or {},
+        "items": await db.get_news_items(date, limit=40),
     }
 
 
-@router.post("/override/square-off")
-async def override_square_off(request: Request):
-    """Emergency exit for all positions and pause the bot."""
-    trader = request.app.state.trader
-    closed_count = await trader.emergency_square_off()
-    return {"ok": True, "closed_count": closed_count, "bot_paused": True}
+@router.get("/ai/strategies")
+async def ai_strategies():
+    """Strategies the bot has invented on its own (Strategy Lab)."""
+    return await db.get_ai_strategies()
+
+
+@router.get("/ai/knowledge")
+async def ai_knowledge(limit: int = 60, category: Optional[str] = None):
+    limit = max(1, min(limit, 200))
+    return await db.get_knowledge(limit=limit, category=category)
+
+
+@router.get("/ai/suggestions")
+async def ai_suggestions():
+    """Feature requests the AI brain has made for its own improvement."""
+    return await db.get_ai_suggestions()
