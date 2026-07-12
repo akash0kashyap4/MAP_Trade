@@ -641,12 +641,27 @@ async def get_trading_mode():
     return {"mode": current_trading_mode(), "available": list(TRADING_MODES)}
 
 
+# Candle response cache: (instrument, interval) -> (expiry_ts, payload).
+# yfinance round-trips take 1-3s; without this every timeframe tap re-hits Yahoo,
+# which is what made the chart feel slow. TTL is short so intraday stays fresh.
+_candle_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_CANDLE_TTL = {"1m": 20, "5m": 30, "15m": 45, "1h": 120, "1D": 300}  # seconds
+# Coalesce concurrent requests for the same key onto one upstream fetch so a
+# double-tap or two viewers don't trigger two Yahoo calls.
+_candle_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+
 @router.get("/candles")
 async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     """
     Fetch OHLCV candles for a given instrument and interval via yfinance.
     interval: 1m | 5m | 15m | 1h | 1D
+
+    Cached per (instrument, interval) with a short TTL so repeated loads and
+    timeframe switches are instant instead of waiting on a fresh Yahoo call.
     """
+    import time as _time
+
     import yfinance as yf
     import pytz
     from datetime import time as dtime
@@ -668,48 +683,67 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     if interval not in INTERVAL_MAP:
         raise HTTPException(status_code=400, detail=f"Invalid interval. Use: {list(INTERVAL_MAP)}")
 
-    yf_sym = YF_MAP.get(instrument.upper(), "^NSEI")
-    yf_interval, yf_period, max_c = INTERVAL_MAP[interval]
-    IST = pytz.timezone("Asia/Kolkata")
+    instrument = instrument.upper()
+    key = (instrument, interval)
 
-    try:
-        loop = asyncio.get_running_loop()
+    # Fast path: fresh cache hit, no lock, no network.
+    cached = _candle_cache.get(key)
+    if cached and cached[0] > _time.time():
+        return cached[1]
 
-        def _fetch():
-            ticker = yf.Ticker(yf_sym)
-            df = ticker.history(period=yf_period, interval=yf_interval)
-            return df
+    lock = _candle_locks.setdefault(key, asyncio.Lock())
+    async with lock:
+        # Re-check: another request may have refreshed while we waited.
+        cached = _candle_cache.get(key)
+        if cached and cached[0] > _time.time():
+            return cached[1]
 
-        df = await loop.run_in_executor(None, _fetch)
-        if df.empty:
-            return {"candles": [], "instrument": instrument, "interval": interval}
+        yf_sym = YF_MAP.get(instrument, "^NSEI")
+        yf_interval, yf_period, max_c = INTERVAL_MAP[interval]
+        IST = pytz.timezone("Asia/Kolkata")
 
-        candles = []
-        for dt, row in df.iterrows():
-            try:
-                dt_ist = dt.astimezone(IST)
-            except Exception:
-                dt_ist = dt
-            # For intraday intervals filter to market hours
-            if interval in ("1m", "5m", "15m", "1h"):
-                t = dt_ist.time()
-                if not (dtime(9, 15) <= t <= dtime(15, 30)):
-                    continue
-            candles.append({
-                "time":  dt_ist.isoformat(),
-                "open":  round(float(row["Open"]),  2),
-                "high":  round(float(row["High"]),  2),
-                "low":   round(float(row["Low"]),   2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row["Volume"]) if "Volume" in row else 0,
-            })
+        try:
+            loop = asyncio.get_running_loop()
 
-        # Keep latest max_c candles
-        candles = candles[-max_c:]
-        return {"candles": candles, "instrument": instrument, "interval": interval}
-    except Exception as e:
-        print(f"[candles] error: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+            def _fetch():
+                ticker = yf.Ticker(yf_sym)
+                return ticker.history(period=yf_period, interval=yf_interval)
+
+            df = await loop.run_in_executor(None, _fetch)
+            if df.empty:
+                # Serve slightly-stale data rather than an empty chart if we have it.
+                if cached:
+                    return cached[1]
+                return {"candles": [], "instrument": instrument, "interval": interval}
+
+            candles = []
+            for dt, row in df.iterrows():
+                try:
+                    dt_ist = dt.astimezone(IST)
+                except Exception:
+                    dt_ist = dt
+                if interval in ("1m", "5m", "15m", "1h"):
+                    t = dt_ist.time()
+                    if not (dtime(9, 15) <= t <= dtime(15, 30)):
+                        continue
+                candles.append({
+                    "time":  dt_ist.isoformat(),
+                    "open":  round(float(row["Open"]),  2),
+                    "high":  round(float(row["High"]),  2),
+                    "low":   round(float(row["Low"]),   2),
+                    "close": round(float(row["Close"]), 2),
+                    "volume": int(row["Volume"]) if "Volume" in row else 0,
+                })
+
+            candles = candles[-max_c:]
+            payload = {"candles": candles, "instrument": instrument, "interval": interval}
+            _candle_cache[key] = (_time.time() + _CANDLE_TTL.get(interval, 30), payload)
+            return payload
+        except Exception as e:
+            print(f"[candles] error: {e}")
+            if cached:
+                return cached[1]  # last-known-good beats a hard error on the chart
+            raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # ── CONFIG / RISK READ-OUT ───────────────────────────────────────────────────

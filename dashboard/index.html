@@ -1369,12 +1369,19 @@ es.onmessage = (e) => {
 };
 
 // ── CANDLES ──
+// Chart state kept so the crosshair overlay can map cursor -> candle/price
+// without refetching. Set at the end of every updateCandles() render.
+let _chartCandles = null;
+let _chartGeom = null;
+let _chartHover = null;   // {x, y} in CSS px, or null when the pointer leaves
+
 function updateCandles(candles) {
   const placeholder = document.getElementById('chart-placeholder');
   const canvas = document.getElementById('chart-canvas');
   if (!candles || !candles.length) {
     if (placeholder) placeholder.style.display = 'flex';
     if (canvas) canvas.style.display = 'none';
+    _chartCandles = null; _chartGeom = null;
     return;
   }
   if (placeholder) placeholder.style.display = 'none';
@@ -1486,6 +1493,116 @@ function updateCandles(candles) {
     chartChgEl.textContent = `${sign}${chg.toFixed(2)} (${sign}${chgPct.toFixed(2)}%)`;
     chartChgEl.style.color = chg >= 0 ? 'var(--green)' : 'var(--red)';
   }
+
+  // Persist geometry for the crosshair, then overlay it if the pointer is on-chart.
+  _chartCandles = candles;
+  _chartGeom = {
+    minVal, maxVal, valRange, paddingLeft, paddingTop, paddingRight, paddingBottom,
+    chartWidth, chartHeight, candleWidth, width, height,
+  };
+  if (_chartHover) _drawCrosshair(ctx);
+}
+
+function _fmtCandleTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso || '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  // 00:00 usually means a daily candle — show the date instead of midnight.
+  if (hh === '00' && mm === '00') return d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+  return `${d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'})} ${hh}:${mm}`;
+}
+
+// Draw a TradingView-style crosshair + OHLC readout at the hovered candle.
+function _drawCrosshair(ctx) {
+  const g = _chartGeom, h = _chartHover, C = _chartCandles;
+  if (!g || !h || !C) return;
+
+  let idx = Math.floor((h.x - g.paddingLeft) / g.candleWidth);
+  idx = Math.max(0, Math.min(C.length - 1, idx));
+  const c = C[idx];
+  const cx = g.paddingLeft + idx * g.candleWidth + g.candleWidth / 2;
+
+  // Price under the actual cursor y (clamped to the plot area).
+  const yClamped = Math.max(g.paddingTop, Math.min(g.paddingTop + g.chartHeight, h.y));
+  const price = g.minVal + (1 - (yClamped - g.paddingTop) / g.chartHeight) * g.valRange;
+
+  ctx.save();
+  ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(0,212,255,0.55)';
+  // vertical (snapped to candle) + horizontal (at cursor)
+  ctx.beginPath(); ctx.moveTo(cx, g.paddingTop); ctx.lineTo(cx, g.paddingTop + g.chartHeight); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(g.paddingLeft, yClamped); ctx.lineTo(g.width - g.paddingRight, yClamped); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Right-axis price tag at the cursor
+  const tag = price.toLocaleString('en-IN', {maximumFractionDigits: 1});
+  ctx.font = '9px "IBM Plex Mono", monospace';
+  const tagW = ctx.measureText(tag).width + 8;
+  ctx.fillStyle = '#00d4ff';
+  ctx.fillRect(g.width - g.paddingRight + 1, yClamped - 7, tagW, 14);
+  ctx.fillStyle = '#05050a';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(tag, g.width - g.paddingRight + 5, yClamped);
+
+  // OHLC tooltip box (flips side near the right edge so it never clips)
+  const up = c.close >= c.open;
+  const col = up ? '#00ff88' : '#ff3355';
+  const rows = [
+    ['O', c.open], ['H', c.high], ['L', c.low], ['C', c.close],
+  ];
+  const chg = c.close - c.open;
+  const chgPct = c.open ? (chg / c.open) * 100 : 0;
+  const boxW = 118, boxH = 74;
+  let bx = cx + 10;
+  if (bx + boxW > g.width - g.paddingRight) bx = cx - 10 - boxW;
+  const by = g.paddingTop + 4;
+
+  ctx.fillStyle = 'rgba(8,10,18,0.92)';
+  ctx.strokeStyle = 'rgba(0,212,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.fillRect(bx, by, boxW, boxH);
+  ctx.strokeRect(bx, by, boxW, boxH);
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#6b6b80';
+  ctx.fillText(_fmtCandleTime(c.time), bx + 7, by + 13);
+  let ry = by + 28;
+  rows.forEach(([k, v]) => {
+    ctx.fillStyle = '#6b6b80';
+    ctx.fillText(k, bx + 7, ry);
+    ctx.fillStyle = col;
+    ctx.textAlign = 'right';
+    ctx.fillText(v.toLocaleString('en-IN', {minimumFractionDigits: 2}), bx + boxW - 7, ry);
+    ctx.textAlign = 'left';
+    ry += 11;
+  });
+  ctx.restore();
+}
+
+// Attach pointer/touch handlers once; they set _chartHover and re-render.
+function _initChartInteractions() {
+  const canvas = document.getElementById('chart-canvas');
+  if (!canvas || canvas._crosshairWired) return;
+  canvas._crosshairWired = true;
+
+  const move = (clientX, clientY) => {
+    const rect = canvas.getBoundingClientRect();
+    _chartHover = { x: clientX - rect.left, y: clientY - rect.top };
+    if (_chartCandles) updateCandles(_chartCandles);
+  };
+  const clear = () => {
+    if (!_chartHover) return;
+    _chartHover = null;
+    if (_chartCandles) updateCandles(_chartCandles);
+  };
+
+  canvas.addEventListener('mousemove', e => move(e.clientX, e.clientY));
+  canvas.addEventListener('mouseleave', clear);
+  canvas.addEventListener('touchstart', e => { if (e.touches[0]) move(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+  canvas.addEventListener('touchmove',  e => { if (e.touches[0]) move(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+  canvas.addEventListener('touchend', clear);
 }
 
 // ── INDICATORS ──
@@ -2873,6 +2990,27 @@ async function setTF(tf, el) {
     console.error('[setTF] fetch failed:', e);
     if (canvas) canvas.style.opacity = '1';
   }
+}
+
+// ── Chart bootstrap ──
+// Load candles immediately on page open (don't wait for the first SSE push or a
+// manual timeframe tap), and wire the crosshair. Also refresh the active
+// timeframe every 60s while the tab is visible so the chart stays live.
+function _bootChart() {
+  _initChartInteractions();
+  const activeBtn = document.querySelector('.tf-btn.active') || document.querySelector('.tf-btn');
+  if (activeBtn) setTF(_currentTF, activeBtn);
+}
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  const activeBtn = document.querySelector('.tf-btn.active');
+  if (activeBtn) setTF(_currentTF, activeBtn);
+}, 60000);
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _bootChart);
+} else {
+  _bootChart();
 }
 </script>
 </body>
