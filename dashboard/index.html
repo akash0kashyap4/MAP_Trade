@@ -1059,16 +1059,34 @@
           <button class="bt-btn" id="bt-runai-btn" onclick="runAiOnly()" style="display:none;background:#ffc800;color:#000;font-weight:700">🤖 AI ONLY</button>
         </div>
         <div class="bt-row" style="margin-top:4px;gap:6px">
-          <select class="bt-input" id="bt-strategy" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:11px;padding:3px 6px">
+          <select class="bt-input" id="bt-strategy" onchange="onStrategyChange()" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:11px;padding:3px 6px">
             <option value="first_candle">First Candle Direction</option>
             <option value="orb15">Opening Range Breakout (15 min)</option>
             <option value="rsi_reversal">RSI Reversal (30 min)</option>
             <option value="ema_trend">EMA Trend Follow (9/21/50)</option>
             <option value="gap_direction">Gap &amp; Go (open vs prev close)</option>
+            <option value="custom">➕ Custom strategy (upload)</option>
           </select>
           <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-dim);cursor:pointer;white-space:nowrap">
             <input type="checkbox" id="bt-use-ai" style="cursor:pointer" onchange="onAiToggle()"> AI brain
           </label>
+        </div>
+
+        <!-- CUSTOM STRATEGY UPLOAD -->
+        <div id="bt-custom-panel" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:4px;padding:10px;background:var(--bg3)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span class="section-label">CUSTOM STRATEGY (JSON)</span>
+            <span style="display:flex;gap:6px">
+              <button class="bt-btn" onclick="insertStrategyExample()" style="font-size:10px">EXAMPLE</button>
+              <button class="bt-btn" onclick="loadStrategyFile()" style="font-size:10px">📂 FILE</button>
+              <button class="bt-btn" onclick="validateStrategy()" style="font-size:10px;background:var(--cyan);color:var(--bg)">✓ VALIDATE</button>
+            </span>
+          </div>
+          <input type="file" id="bt-strategy-file" accept=".json,application/json" style="display:none" onchange="onStrategyFilePicked(event)">
+          <textarea id="bt-custom-json" spellcheck="false" placeholder='{"name":"My strategy","entry_long":[{"field":"rsi","op":"<","value":35}]}'
+            style="width:100%;min-height:120px;background:var(--bg2);color:var(--green);border:1px solid var(--border);border-radius:3px;font-family:var(--mono);font-size:11px;padding:8px;resize:vertical"></textarea>
+          <div id="bt-custom-msg" style="font-size:10px;margin-top:5px;min-height:14px"></div>
+          <div id="bt-custom-fields" style="font-size:9px;color:var(--text-dim);margin-top:4px"></div>
         </div>
         <div id="bt-progress" style="display:none">
           <div class="progress-bar"><div class="progress-fill" id="bt-prog-fill"></div></div>
@@ -2230,6 +2248,70 @@ function onAiToggle() {
   aiBtn.style.display = document.getElementById('bt-use-ai').checked ? 'inline-block' : 'none';
 }
 
+// ── Custom strategy upload ──
+function onStrategyChange() {
+  const isCustom = document.getElementById('bt-strategy').value === 'custom';
+  document.getElementById('bt-custom-panel').style.display = isCustom ? 'block' : 'none';
+  if (isCustom && !document.getElementById('bt-custom-fields').textContent) {
+    fetch('/api/backtest/custom/schema').then(r => r.json()).then(s => {
+      document.getElementById('bt-custom-fields').textContent =
+        'fields: ' + s.fields.join(', ') + '  ·  ops: ' + s.operators.join(' ');
+    }).catch(() => {});
+  }
+}
+
+function _customMsg(msg, isErr) {
+  const el = document.getElementById('bt-custom-msg');
+  el.textContent = msg;
+  el.style.color = isErr ? 'var(--red)' : 'var(--green)';
+}
+
+function _readCustomJson() {
+  const raw = document.getElementById('bt-custom-json').value.trim();
+  if (!raw) { _customMsg('Paste or load a strategy JSON first.', true); return null; }
+  try { return JSON.parse(raw); }
+  catch (e) { _customMsg('Invalid JSON: ' + e.message, true); return null; }
+}
+
+async function validateStrategy() {
+  const parsed = _readCustomJson();
+  if (!parsed) return;
+  try {
+    const r = await fetch('/api/backtest/custom/validate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsed),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const s = d.strategy;
+      _customMsg(`✓ Valid — "${s.name}" · ${s.entry_long.length} long / ${s.entry_short.length} short rules`, false);
+    } else {
+      _customMsg('✗ ' + d.error, true);
+    }
+  } catch (e) { _customMsg('Validation failed: ' + e.message, true); }
+}
+
+function insertStrategyExample() {
+  fetch('/api/backtest/custom/schema').then(r => r.json()).then(s => {
+    document.getElementById('bt-custom-json').value = JSON.stringify(s.example, null, 2);
+    _customMsg('Example loaded — edit it, then VALIDATE.', false);
+  }).catch(() => {});
+}
+
+function loadStrategyFile() { document.getElementById('bt-strategy-file').click(); }
+
+function onStrategyFilePicked(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('bt-custom-json').value = reader.result;
+    _customMsg(`Loaded ${file.name} — press VALIDATE.`, false);
+  };
+  reader.readAsText(file);
+  ev.target.value = '';  // allow re-picking the same file
+}
+
 async function runAiOnly() {
   const aiBtn  = document.getElementById('bt-runai-btn');
   const runBtn = document.getElementById('bt-run-btn');
@@ -2428,13 +2510,25 @@ async function runBacktest() {
   fill.style.width   = '5%';
   lbl.textContent    = 'starting…';
 
+  const strategy = document.getElementById('bt-strategy').value || 'first_candle';
   const payload = {
     instrument: document.getElementById('bt-instrument').value || 'NIFTY',
     start_date: document.getElementById('bt-start').value,
     end_date:   document.getElementById('bt-end').value,
-    strategy:   document.getElementById('bt-strategy').value || 'first_candle',
+    strategy:   strategy,
     use_ai:     document.getElementById('bt-use-ai').checked,
   };
+
+  // For a custom strategy, attach the uploaded definition (validate first).
+  if (strategy === 'custom') {
+    const parsed = _readCustomJson();
+    if (!parsed) {
+      btn.disabled = false; prog.style.display = 'none';
+      _customMsg('Fix the strategy JSON before running.', true);
+      return;
+    }
+    payload.custom_strategy = parsed;
+  }
 
   try {
     await fetch('/api/backtest/run', {

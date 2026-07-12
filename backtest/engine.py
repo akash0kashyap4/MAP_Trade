@@ -97,12 +97,18 @@ class BacktestEngine:
         return SENSEX_STEP if instrument == "SENSEX" else ATM_STEP
 
     def run(self, instrument: str, start_str: str, end_str: str, config: dict = None) -> BacktestResult:
-        from backtest.strategies import init_day, STRATEGIES
+        from backtest.strategies import init_day, register_custom, STRATEGIES
         config    = config or {}
         cfg_sl    = config.get("stop_loss_rs", TRADING["stop_loss_rs"])
         cfg_tgt   = config.get("target_rs",    TRADING["target_rs"])
         cfg_lots  = config.get("lots",         TRADING["lots"])
         strategy  = config.get("strategy",     "first_candle")
+
+        # A user-uploaded declarative strategy arrives as config["custom_def"];
+        # register it under the 'custom' key so the rest of run() is unchanged.
+        if config.get("custom_def"):
+            register_custom(config["custom_def"])
+            strategy = "custom"
         strat_name = "AI Brain (Claude)" if self.use_ai_brain else STRATEGIES.get(strategy, strategy)
 
         # Max trades per day and daily loss limit

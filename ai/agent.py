@@ -139,7 +139,12 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
+# Trade decisions are short JSON; capping output keeps each call fast and cheap.
+# The old 4096 let the model ramble, adding latency to every backtest bar.
+_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "1024"))
+
+
+def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
     """
     Call Anthropic API directly using the API key from config.py.
     """
@@ -156,7 +161,7 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
         try:
             response = client.messages.create(
                 model=CLAUDE_MODEL,
-                max_tokens=4096,
+                max_tokens=max_tokens or _MAX_TOKENS,
                 system=system,
                 messages=[
                     {"role": "user", "content": user}

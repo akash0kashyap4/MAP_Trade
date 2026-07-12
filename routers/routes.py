@@ -216,7 +216,7 @@ def _check_same_origin(request: Request) -> None:
 
 
 _VALID_INSTRUMENTS = {"NIFTY", "BANKNIFTY", "SENSEX"}
-_VALID_STRATEGIES = {"first_candle", "orb15", "rsi_reversal", "ema_trend", "gap_direction"}
+_VALID_STRATEGIES = {"first_candle", "orb15", "rsi_reversal", "ema_trend", "gap_direction", "custom"}
 _DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
 
 
@@ -231,6 +231,8 @@ class BacktestRequest(BaseModel):
     lots:                Optional[int]   = None
     max_trades_per_day:  Optional[int]   = None
     max_daily_loss:      Optional[float] = None
+    # Present only when strategy == "custom": the uploaded declarative definition.
+    custom_strategy:     Optional[dict]  = None
 
     def validate_request(self):
         import re
@@ -239,6 +241,14 @@ class BacktestRequest(BaseModel):
             raise ValueError(f"instrument must be one of {_VALID_INSTRUMENTS}")
         if self.strategy not in _VALID_STRATEGIES:
             raise ValueError(f"strategy must be one of {_VALID_STRATEGIES}")
+        if self.strategy == "custom":
+            from backtest.custom_strategy import validate_custom, StrategyError
+            if not self.custom_strategy:
+                raise ValueError("custom strategy selected but no definition provided")
+            try:
+                validate_custom(self.custom_strategy)
+            except StrategyError as e:
+                raise ValueError(str(e)) from e
         for field_name, date_str in (("start_date", self.start_date), ("end_date", self.end_date)):
             if not re.match(_DATE_RE, date_str):
                 raise ValueError(f"{field_name} must be YYYY-MM-DD")
@@ -254,6 +264,42 @@ class BacktestRequest(BaseModel):
 async def list_strategies():
     from backtest.strategies import STRATEGIES
     return STRATEGIES
+
+
+@router.get("/backtest/custom/schema")
+async def custom_strategy_schema():
+    """Fields and operators a custom strategy may use — powers the UI builder."""
+    from backtest.custom_strategy import ALLOWED_FIELDS, ALLOWED_OPS, MAX_CONDITIONS
+    return {
+        "fields": sorted(ALLOWED_FIELDS),
+        "operators": sorted(ALLOWED_OPS),
+        "max_conditions": MAX_CONDITIONS,
+        "example": {
+            "name": "RSI dip in uptrend",
+            "time_window": ["09:45", "13:30"],
+            "cooldown_mins": 30,
+            "entry_long": [
+                {"field": "rsi", "op": "<", "value": 35},
+                {"field": "ema9", "op": ">", "field_right": "ema21"},
+            ],
+            "entry_short": [
+                {"field": "rsi", "op": ">", "value": 68},
+                {"field": "ema9", "op": "<", "field_right": "ema21"},
+            ],
+        },
+    }
+
+
+@router.post("/backtest/custom/validate")
+async def validate_custom_strategy(defn: dict):
+    """Validate an uploaded strategy definition; returns normalized def or errors
+    so the UI can give instant feedback before a run."""
+    from backtest.custom_strategy import validate_custom, StrategyError
+    try:
+        normalized = validate_custom(defn)
+        return {"ok": True, "strategy": normalized}
+    except StrategyError as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/status")
@@ -326,6 +372,8 @@ def _run_backtest_sync(req: BacktestRequest):
         config["max_daily_loss"] = req.max_daily_loss
 
     config["strategy"] = req.strategy
+    if req.strategy == "custom" and req.custom_strategy:
+        config["custom_def"] = req.custom_strategy
     engine = BacktestEngine(use_ai_brain=req.use_ai)
     result = engine.run(req.instrument, req.start_date, req.end_date, config)
     return result, config

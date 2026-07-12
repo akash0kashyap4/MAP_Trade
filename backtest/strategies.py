@@ -320,6 +320,19 @@ _SIGNAL_MAP = {
 }
 
 
+def register_custom(defn: dict) -> str:
+    """Register an uploaded declarative strategy under the key 'custom' so the
+    engine can run it by name. Returns its display name. Single-user, single
+    backtest-at-a-time deployment, so overwriting the 'custom' slot is fine."""
+    from backtest.custom_strategy import make_custom_strategy
+    init_fn, signal_fn = make_custom_strategy(defn)
+    _INIT_MAP["custom"] = init_fn
+    _SIGNAL_MAP["custom"] = signal_fn
+    name = defn.get("name") or "Custom Strategy"
+    STRATEGIES["custom"] = name
+    return name
+
+
 def init_day(strategy: str, candles_1min: list, prev_close: float = 0) -> dict:
     fn = _INIT_MAP.get(strategy)
     return fn(candles_1min, prev_close) if fn else {}
