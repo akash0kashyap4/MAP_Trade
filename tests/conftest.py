@@ -8,6 +8,27 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Stub optional heavy dependencies so tests can import project modules without
 # installing the full production dependency set.
+import importlib.util as _ilu
+
+
+def _stub(mod: str) -> None:
+    """Register a MagicMock for `mod` only if it isn't genuinely importable.
+
+    fastapi/uvicorn/httpx are real dependencies of the app and are installed in
+    CI; the HTTP-level security suite (tests/test_security.py) needs the real
+    FastAPI + TestClient, so we must never shadow them with a mock. Anything not
+    installed still gets stubbed so the pure-unit tests keep importing.
+    """
+    if mod in sys.modules:
+        return
+    try:
+        if _ilu.find_spec(mod) is not None:
+            return  # real module available — use it
+    except (ImportError, ModuleNotFoundError, ValueError):
+        pass
+    sys.modules[mod] = MagicMock()
+
+
 for _mod in (
     # Trading / data feed deps not available in CI
     "yfinance", "growwapi", "curl_cffi", "curl_cffi.requests",
@@ -21,7 +42,7 @@ for _mod in (
     "telegram", "telegram.ext", "python_telegram_bot",
     # AI / LLM
     "anthropic",
-    # Web framework stubs (real fastapi/pydantic are installed — only stub sub-paths missing locally)
+    # Web framework: stubbed only if truly missing (see _stub docstring)
     "uvicorn", "fastapi",
     "fastapi.responses", "fastapi.staticfiles",
     # Colorama
@@ -31,8 +52,7 @@ for _mod in (
     "apscheduler.schedulers", "apscheduler.schedulers.asyncio",
     "apscheduler.triggers", "apscheduler.triggers.cron",
 ):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+    _stub(_mod)
 
 # colorama needs real string attributes for string formatting
 import colorama as _ca  # noqa: E402  (after mock registration)

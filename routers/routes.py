@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from auth import require_user
 from data import database as db
 from data.store import store
 from groww.oauth import check_api_connection, send_telegram
@@ -22,7 +23,15 @@ async def groww_status():
 @router.post("/_demo/seed")
 async def demo_seed():
     """Load representative sample data into the live store for screenshots.
-    Wipes on next bot restart (store is in-memory). Behind basic auth in nginx."""
+    Wipes on next bot restart (store is in-memory).
+
+    Disabled in production: this overwrites the operator's live view of prices,
+    positions, and P&L, which on a trading terminal is a safety incident, not a
+    cosmetic one. Never rely on the nginx basic-auth comment that used to be here
+    — that control did not exist in the shipped config."""
+    from config import IS_PRODUCTION
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=404, detail="Not Found")
     from datetime import datetime, timedelta
     import pytz
 
@@ -360,10 +369,13 @@ async def _run_backtest(req: BacktestRequest):
 
 @router.post("/tick")
 async def manual_tick(request: Request):
-    """Manually trigger one market loop tick (for testing). Requires authentication."""
+    """Manually trigger one market loop tick (for testing).
+    Authenticated, and disabled in production (forces a live decision tick)."""
+    from config import IS_PRODUCTION
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=404, detail="Not Found")
     _check_same_origin(request)
-    from main import require_auth
-    require_auth(request)
+    require_user(request)
     trader = request.app.state.trader
     trader._market_open = True
     await trader.market_loop_tick()
@@ -740,8 +752,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     Requires authentication. Changes are in-memory (reset on restart).
     """
     _check_same_origin(request)
-    from main import require_auth  # deferred to avoid circular import at module load
-    require_auth(request)
+    require_user(request)
 
     changed = {}
     if req.paused is not None:
@@ -772,8 +783,7 @@ async def emergency_square_off(request: Request):
     Requires authentication.
     """
     _check_same_origin(request)
-    from main import require_auth
-    require_auth(request)
+    require_user(request)
 
     trader = request.app.state.trader
     pnl_before = store.realized_pnl
@@ -797,8 +807,7 @@ async def set_trading_mode(req: ModeRequest, request: Request):
     import config
 
     _check_same_origin(request)
-    from main import require_auth
-    require_auth(request)
+    require_user(request)
 
     mode_def = TRADING_MODES.get(req.mode)
     if mode_def is None:
@@ -865,8 +874,7 @@ async def get_report(report_date: str):
 async def generate_report_now(request: Request):
     """Force-generate today's report immediately (also runs after close at 15:45)."""
     _check_same_origin(request)
-    from main import require_auth
-    require_auth(request)
+    require_user(request)
     reporter = getattr(request.app.state, "reporter", None)
     if reporter is None:
         raise HTTPException(status_code=503, detail="Reporter not initialized")
@@ -878,8 +886,7 @@ async def generate_report_now(request: Request):
 async def news_scan_now(request: Request):
     """Force a news fetch + AI analysis right now."""
     _check_same_origin(request)
-    from main import require_auth
-    require_auth(request)
+    require_user(request)
     news_brain = getattr(request.app.state, "news_brain", None)
     if news_brain is None:
         raise HTTPException(status_code=503, detail="News brain not initialized")

@@ -50,13 +50,19 @@ ids `strat-list`, `knowledge-list`, `news-items`) and the `/api/ai/strategies`,
 `/api/ai/knowledge`, `/api/news/today` endpoints (`routers/routes.py:893-909`).
 None of that exists on `main`.
 
-The two branches have **diverged, and neither is a superset of the other:**
-- `main` (and this remediation branch) carries the auth-hardening and override
-  controls — and the duplicate-square-off bug (§4.1).
-- `claude/ragi-bot-improvements-6nyz1v` carries the AI/news/reports features but
-  lacks later `main` work. Two audit root-causes are **wrong** when checked
-  against that deployed branch: (a) `/override/square-off` is **not** duplicated
-  there — the §4.1 dead-handler bug is `main`-only; (b) `loadNewsPulse()` already
+**Branch relationship (verified with `git merge-base`): `claude/ragi-bot-
+improvements-6nyz1v` is a clean *superset* of `main`** — `main` is its ancestor
+plus four feature commits. So reconciliation is a fast, conflict-free merge, not a
+fork to untangle. **This has now been done:** the deployed branch is merged into
+this remediation branch (`claude/ragi-bot-audit-10-10-27njzj`), which is therefore
+the single lineage carrying production's AI/news/reports features **and** the
+Phase 1 security fixes below. Redeploy production from this branch (Phase 0).
+
+Two audit root-causes are **wrong** when checked against the deployed code:
+- (a) `/override/square-off` is **not** duplicated on the deployed branch — the
+  §4.1 dead-handler bug is `main`-only and never reached production; the merge
+  keeps the single correct handler.
+- (b) `loadNewsPulse()` already
   handles the `{date, analysis, items}` object correctly with an empty state
   (`dashboard/index.html:2472-2500`), so "News Pulse expects an array" is not the
   cause. The real defect behind all three stuck Reports tabs is that the Strategy
@@ -108,27 +114,26 @@ Anything less is not 10/10, regardless of how the UI looks.
 
 Ordered execution sequence. Do not reorder security below polish.
 
-### Phase 0 — Reconcile branches, establish one deploy lineage (1 day)
-Production runs `claude/ragi-bot-improvements-6nyz1v` (`cd4aebb`), which has
-diverged from `main`. Every later phase assumes one branch that is both what
-production deploys and where fixes land. Do this first or fixes will miss the server.
-- **P0.0** Merge the two lineages. Recommended: branch off `main` (which has the
-  auth/override work), merge `claude/ragi-bot-improvements-6nyz1v` into it (bringing
-  AI/news/reports), resolve conflicts in `routers/routes.py`, `main.py`,
-  `dashboard/index.html`. Net result must contain: auth infra **and** AI features
-  **and** the §4.1 route-dedup fix (present the conflict so the dead handler is
-  dropped, not re-merged).
-- **P0.1** Redeploy production from the reconciled branch; capture its SHA and show
-  it in the dashboard footer so future drift is visible at a glance.
-- **P0.2** Only then proceed to Phase 1 against that single branch.
+### Phase 0 — Reconcile branches, establish one deploy lineage ✅ DONE
+`claude/ragi-bot-improvements-6nyz1v` (`cd4aebb`) is a superset of `main`, so the
+merge was clean.
+- **P0.0 ✅** Merged the deployed branch into `claude/ragi-bot-audit-10-10-27njzj`;
+  it now carries production's features + the Phase 1 fixes, with a single correct
+  override handler.
+- **P0.1** ☐ Redeploy production from this branch; add its SHA to the dashboard
+  footer so future drift is visible. (deploy action — owner: Akash)
 
-### Phase 1 — Critical, server-side (1–2 days) — blocks everything
-- **P1.1** Fix duplicate route registrations; make square-off call the trader (§4.1).
-- **P1.2** Global auth dependency on the API router + `/stream` (§4.2).
-- **P1.3** Disable `/docs`, `/redoc`, `/openapi.json` in production (§4.3).
-- **P1.4** Hard-fail boot on default/missing credentials in production (§4.4).
-- **P1.5** Server-side confirmation intent for square-off and live switch (§7.2).
-- **P1.6** Gate `/api/_demo/seed`, `/api/tick` behind `ENV != production` (§4.5).
+### Phase 1 — Critical, server-side — LARGELY DONE (this branch)
+- **P1.1 n/a** Duplicate registrations were `main`-only; the deployed branch/merge
+  has a single override handler. Regression-locked by `test_no_duplicate_route_registrations`.
+- **P1.2 ✅** Router-level `Depends(require_user)` on all `/api/*` + `require_user`
+  on `/stream` (`main.py`, `auth.py`). Covered by `tests/test_security.py`.
+- **P1.3 ✅** `docs_url`/`redoc_url`/`openapi_url` disabled when `ENV=production`.
+- **P1.4 ✅** `resolve_bot_password()` hard-fails boot on default/missing creds +
+  missing `SESSION_SECRET` in production. Unit-tested.
+- **P1.5 ☐** Server-side typed-confirmation intent for square-off and live switch
+  (§7.2) — still to implement (Phase 2 in progress).
+- **P1.6 ✅** `/api/_demo/seed` and `/api/tick` return 404 when `ENV=production`.
 - **P1.7** Fix rate limiting behind nginx (X-Forwarded-For) (§4.6).
 
 ### Phase 2 — High (2–3 days)

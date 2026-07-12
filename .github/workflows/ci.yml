@@ -19,7 +19,9 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install pytest pytest-asyncio ruff numpy pandas pytz python-dotenv pydantic requests aiohttp
+        # fastapi/uvicorn/httpx/aiosqlite are required for the real HTTP-level
+        # security suite (tests/test_security.py drives the app via TestClient).
+        run: pip install pytest pytest-asyncio ruff numpy pandas pytz python-dotenv pydantic requests aiohttp fastapi uvicorn httpx aiosqlite
 
       - name: Lint (ruff)
         run: |

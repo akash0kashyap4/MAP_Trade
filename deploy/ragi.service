@@ -7,7 +7,12 @@ User=root
 Group=www-data
 WorkingDirectory=/root/Ragi_bot
 Environment="PATH=/root/Ragi_bot/venv/bin"
-ExecStart=/root/Ragi_bot/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Environment="ENV=production"
+# --proxy-headers + trusted proxy so request.client.host is the real client IP
+# (from X-Forwarded-For set by nginx), not 127.0.0.1 — required for per-IP login
+# rate limiting to work. --forwarded-allow-ips must list only the nginx host.
+ExecStart=/root/Ragi_bot/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 \
+          --proxy-headers --forwarded-allow-ips 127.0.0.1
 
 # Auto-restart on crash
 Restart=always

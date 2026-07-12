@@ -707,6 +707,7 @@
     <div class="status-tag" id="ai-status">WAITING</div>
     <button class="hdr-badge paper" id="mode-btn" onclick="requestModeSwitch()" title="Click to switch trading mode" aria-live="polite">● PAPER MODE</button>
     <div class="hdr-badge next">NEXT CHECK <span id="next-check">--:--</span></div>
+    <button class="hdr-badge" id="logout-btn" onclick="doLogout()" title="Log out" aria-label="Log out">⏻ LOGOUT</button>
   </div>
 
   <!-- MAIN BODY -->
@@ -1227,6 +1228,21 @@
 </div>
 
 <script>
+// ── Session ──
+async function doLogout() {
+  try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); }
+  finally { window.location.href = '/'; }
+}
+
+// If any API call comes back 401 the session has expired — bounce to login
+// rather than leaving panels frozen on stale/loading state.
+const _origFetch = window.fetch;
+window.fetch = async (...args) => {
+  const res = await _origFetch(...args);
+  if (res.status === 401) { window.location.href = '/'; }
+  return res;
+};
+
 // ── SSE ──
 const es = new EventSource('/stream');
 let lastPrices = {};

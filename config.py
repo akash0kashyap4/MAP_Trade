@@ -4,6 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Deployment environment: "development" (default) | "production".
+# Production tightens security: API docs are disabled and default/weak
+# credentials are refused at boot. Set ENV=production in the systemd unit.
+ENV = os.getenv("ENV", "development").strip().lower()
+IS_PRODUCTION = ENV == "production"
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")

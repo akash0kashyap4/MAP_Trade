@@ -10,13 +10,18 @@ import hmac
 import logging
 import os
 from pathlib import Path
-import secrets
 import sys
 
 import uvicorn
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import Depends, FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
+
+from config import IS_PRODUCTION
+from auth import (
+    COOKIE_NAME, DEFAULT_PASSWORD, SESSION_TTL, check_session, create_session,
+    destroy_session, require_user, resolve_bot_password,
+)
 
 from data.database import init_db
 from data.store import store
@@ -48,35 +53,23 @@ log = logging.getLogger("ragi.main")
 # ─── Auth config ────────────────────────────────────────────────────────────
 BOT_USERNAME = os.getenv("BOT_USERNAME", "Panda001")
 _raw_pw = os.getenv("BOT_PASSWORD")
-if not _raw_pw:
+
+if not IS_PRODUCTION and not _raw_pw:
     import warnings
     warnings.warn(
         "BOT_PASSWORD env var not set — using insecure default. Set it in .env before deploying.",
         stacklevel=1,
     )
-BOT_PASSWORD = _raw_pw or "ChangeMe123!"
-SESSION_SECRET = os.getenv("SESSION_SECRET", secrets.token_hex(32))
-_SESSION_TTL = int(os.getenv("SESSION_TTL_SECONDS", 86400 * 7))  # 7 days default
-# In-memory session store: token -> expiry timestamp. Fine for single-user.
-_sessions: dict[str, float] = {}
 
-def _make_token() -> str:
-    return secrets.token_urlsafe(48)
+# Refuses to boot on default/missing credentials when ENV=production.
+BOT_PASSWORD = resolve_bot_password(
+    _raw_pw, IS_PRODUCTION, bool(os.getenv("SESSION_SECRET")), DEFAULT_PASSWORD,
+)
 
-def _check_session(request: Request) -> bool:
-    import time
-    token = request.cookies.get("ragi_session")
-    if not token:
-        return False
-    expiry = _sessions.get(token)
-    if expiry is None or time.time() > expiry:
-        _sessions.pop(token, None)
-        return False
-    return True
+# Session primitives now live in auth.py; require_auth kept as a thin alias so any
+# lingering `from main import require_auth` callers keep working.
+require_auth = require_user
 
-def require_auth(request: Request):
-    if not _check_session(request):
-        raise HTTPException(status_code=401, detail="Not authenticated")
 
 class LoginBody(BaseModel):
     username: str
@@ -155,9 +148,42 @@ class _DBProxy:
         return await save_learning_rules(rules, stats)
 
 
-app = FastAPI(title="Ragi Trading Bot", lifespan=lifespan)
+app = FastAPI(
+    title="Ragi Trading Bot",
+    lifespan=lifespan,
+    # In production the interactive docs and raw schema are disabled so the
+    # private API surface (incl. trading-control endpoints) is not published.
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 
-app.include_router(api_router, prefix="/api")
+# Every /api/* route requires an authenticated session by default. Auth is a
+# router-level dependency (not per-handler) so a newly added endpoint is
+# protected the moment it ships — the previous per-handler pattern is exactly
+# how ~20 routes shipped open. The only public POST /api/login is declared
+# directly on `app` below, so it is unaffected by this dependency.
+app.include_router(api_router, prefix="/api", dependencies=[Depends(require_user)])
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow")
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
+        "font-src fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'",
+    )
+    return resp
 
 
 @app.get("/health")
@@ -166,8 +192,19 @@ async def health():
     return {"status": "ok", "service": "ragi-bot"}
 
 
+@app.get("/robots.txt")
+async def robots():
+    """Private terminal — disallow all crawling."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
+
 @app.get("/stream")
 async def stream(request: Request):
+    # SSE carries the same session cookie as the REST API (EventSource sends
+    # cookies on same-origin requests), so it gets the same gate. Anonymous
+    # clients are rejected before any store data is streamed.
+    require_user(request)
     return sse_endpoint(request)
 
 
@@ -202,32 +239,30 @@ def _record_failure(ip: str) -> None:
 # ─── Auth routes ─────────────────────────────────────────────────────────────
 @app.post("/api/login")
 async def api_login(body: LoginBody, request: Request):
-    import time
     client_ip = request.client.host if request.client else "unknown"
     if _is_rate_limited(client_ip):
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
 
     if body.username == BOT_USERNAME and hmac.compare_digest(body.password, BOT_PASSWORD):
         _login_failures.pop(client_ip, None)
-        token = _make_token()
-        _sessions[token] = time.time() + _SESSION_TTL
+        token = create_session()
         resp = JSONResponse({"ok": True})
         resp.set_cookie(
-            "ragi_session", token,
+            COOKIE_NAME, token,
             httponly=True, secure=True, samesite="lax",
-            max_age=int(_SESSION_TTL),
+            max_age=int(SESSION_TTL),
         )
         return resp
     _record_failure(client_ip)
     raise HTTPException(status_code=401, detail="ACCESS DENIED — Invalid credentials")
 
-@app.get("/api/logout")
+@app.post("/api/logout")
 async def api_logout(request: Request):
-    token = request.cookies.get("ragi_session")
-    if token:
-        _sessions.pop(token, None)
-    resp = RedirectResponse("/")
-    resp.delete_cookie("ragi_session")
+    # POST (not GET): logout mutates session state, so it must not be triggerable
+    # by a prefetch, an <img> src, or a cross-site GET.
+    destroy_session(request.cookies.get(COOKIE_NAME))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE_NAME)
     return resp
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
@@ -237,7 +272,7 @@ async def login_page():
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    if not _check_session(request):
+    if not check_session(request):
         return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index.html",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
