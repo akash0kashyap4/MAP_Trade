@@ -159,8 +159,15 @@
     border-right: 1px solid var(--grid);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;              /* scroll when nav+watch+P&L+capital exceed height */
+    overflow-x: hidden;
+    scrollbar-width: thin;         /* Firefox: slim scrollbar */
+    scrollbar-color: var(--grid) transparent;
   }
+  /* Slim, on-theme scrollbar for WebKit (Chrome/Edge/Safari). */
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--grid); border-radius: 3px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
   .nav-section { padding: 10px 0 4px; }
   .nav-item {
     display: flex;
