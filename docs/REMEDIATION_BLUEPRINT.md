@@ -40,14 +40,45 @@ issues the audit missed that are individually launch-blocking:
    (`Panda001` / `ChangeMe123!`) are only warned about, not refused
    (`main.py:47-55`).
 
-**Repo ↔ deployment drift caveat:** several audit findings do not exist in this
-repo (Strategy Lab / Knowledge Base / News Pulse tabs — the repo's Reports section
-is a "coming soon" placeholder, `dashboard/index.html:815-818`; `method=get` login
-fallback — the login form is JS-`fetch` POST, `dashboard/login.html:208`). Either
-the deployed build is older/different from `main`, or the audit tested another
-artifact. **Action item zero: confirm the deployed build matches this repo before
-trusting any remediation.** Sections below cover both the repo-confirmed defects
-and the deployment-only findings (marked *[deploy-only]*).
+**Repo ↔ deployment drift — CONFIRMED, and it is the single biggest structural
+risk.** The live-site audit let me pin this down: **production is not running
+`main`.** It is running branch **`claude/ragi-bot-improvements-6nyz1v` (commit
+`cd4aebb`, "feat: AI learning system — news brain, daily reports, strategy lab")**,
+proven by exact-match evidence — only that branch contains the Reports sub-tabs
+with the precise stuck `Loading…` strings the audit saw (`dashboard/index.html`
+ids `strat-list`, `knowledge-list`, `news-items`) and the `/api/ai/strategies`,
+`/api/ai/knowledge`, `/api/news/today` endpoints (`routers/routes.py:893-909`).
+None of that exists on `main`.
+
+The two branches have **diverged, and neither is a superset of the other:**
+- `main` (and this remediation branch) carries the auth-hardening and override
+  controls — and the duplicate-square-off bug (§4.1).
+- `claude/ragi-bot-improvements-6nyz1v` carries the AI/news/reports features but
+  lacks later `main` work. Two audit root-causes are **wrong** when checked
+  against that deployed branch: (a) `/override/square-off` is **not** duplicated
+  there — the §4.1 dead-handler bug is `main`-only; (b) `loadNewsPulse()` already
+  handles the `{date, analysis, items}` object correctly with an empty state
+  (`dashboard/index.html:2472-2500`), so "News Pulse expects an array" is not the
+  cause. The real defect behind all three stuck Reports tabs is that the Strategy
+  Lab / Knowledge Base / News Pulse loader functions are never invoked on sub-tab
+  activation — which fits every observed symptom at once: permanent `Loading…`, a
+  completely clean console, and the backing APIs returning data when called
+  manually. The fix is wiring the tab switch to call the loaders, not changing any
+  payload shape.
+
+Two audit findings are genuinely stale even on the deployed branch: the
+`method=get` login fallback (the deployed login uses a JS `fetch` POST) and the
+"unauthenticated `/dashboard`" claim — that branch **does** gate `/dashboard`
+server-side (`main.py:240`, redirect to `/` without a session), so the audit most
+likely carried a valid session cookie ("no *visible* session" ≠ no cookie). The
+**API routes and `/stream` remain genuinely unauthenticated**, and `/docs` +
+`/openapi.json` remain genuinely exposed — those critical findings stand.
+
+**Action item zero (now the highest-priority task): reconcile the two branches**
+before any other fix, so remediation lands on the lineage production actually
+deploys from. Recommended path in §3 Phase 0. Findings verified against the
+deployed branch are marked *[deployed:cd4aebb]*; findings specific to `main` are
+marked *[main-only]*.
 
 ---
 
@@ -77,9 +108,19 @@ Anything less is not 10/10, regardless of how the UI looks.
 
 Ordered execution sequence. Do not reorder security below polish.
 
-### Phase 0 — Verify ground truth (½ day)
-- **P0.0** Diff deployed build at akash.mehakva.com against `main`. Redeploy from
-  `main` if drifted. All later phases assume repo == deployment.
+### Phase 0 — Reconcile branches, establish one deploy lineage (1 day)
+Production runs `claude/ragi-bot-improvements-6nyz1v` (`cd4aebb`), which has
+diverged from `main`. Every later phase assumes one branch that is both what
+production deploys and where fixes land. Do this first or fixes will miss the server.
+- **P0.0** Merge the two lineages. Recommended: branch off `main` (which has the
+  auth/override work), merge `claude/ragi-bot-improvements-6nyz1v` into it (bringing
+  AI/news/reports), resolve conflicts in `routers/routes.py`, `main.py`,
+  `dashboard/index.html`. Net result must contain: auth infra **and** AI features
+  **and** the §4.1 route-dedup fix (present the conflict so the dead handler is
+  dropped, not re-merged).
+- **P0.1** Redeploy production from the reconciled branch; capture its SHA and show
+  it in the dashboard footer so future drift is visible at a glance.
+- **P0.2** Only then proceed to Phase 1 against that single branch.
 
 ### Phase 1 — Critical, server-side (1–2 days) — blocks everything
 - **P1.1** Fix duplicate route registrations; make square-off call the trader (§4.1).
@@ -400,26 +441,35 @@ async function logout() {
 </script>
 ```
 
-### 6.4 *[deploy-only]* Reports tabs / News Pulse
+### 6.4 *[deployed:cd4aebb]* Reports tabs — corrected diagnosis
 
-This repo's Reports section is a placeholder (index.html:815-818), so the audit's
-stuck Strategy Lab / Knowledge Base / News Pulse tabs live in a drifted build.
-When those views are (re)built here, the contract is:
+The audit's root cause ("News Pulse expects an array, gets an object") is **wrong**.
+On the deployed branch, `loadNewsPulse()` (`dashboard/index.html:2472-2500`) already
+consumes the `{date, analysis, items}` object correctly and even renders an empty
+state. Strategy Lab and Knowledge Base loaders likewise exist. Yet all three sit on
+`Loading…` forever with a clean console and working APIs.
 
-- **News Pulse payload** is an object `{ date: string, analysis: string|object|null,
-  items: array }` — never assume an array. Adapter:
+**Actual root cause:** the sub-tab switch handler does not call the loader for
+these three tabs, so their loader functions never run and their panels keep their
+initial `Loading…` placeholder. Daily Reports and AI Requests work because their
+loaders *are* wired. Fix = invoke the loader on tab activation:
 
 ```js
-function adaptNewsPulse(raw) {
-  if (!raw || !Array.isArray(raw.items)) throw new ContractError('news-pulse', raw);
-  return { date: raw.date ?? '', analysis: raw.analysis ?? null, items: raw.items };
+const REPORT_LOADERS = {
+  'daily': loadDailyReports, 'strategy': loadStrategyLab,
+  'knowledge': loadKnowledge, 'ai-requests': loadAiRequests, 'news': loadNewsPulse,
+};
+function showReportTab(key) {
+  /* …toggle active panel… */
+  REPORT_LOADERS[key]?.();          // the missing call
 }
 ```
 
-- `items: []` → styled empty state ("No news analysis for today yet"), not a
-  spinner. Same for Strategy Lab / Knowledge Base `[]` responses.
-- `ContractError` → recoverable error panel + `console.error` with the payload,
-  so contract drift is diagnosable instead of an infinite spinner.
+Harden while there: each loader wraps its `fetch` in the §6.1 helper (check
+`res.ok`, timeout, catch → error panel), and `[]`/empty-object responses render a
+styled empty state rather than falling through to the leftover spinner. Add a
+regression test (FE-1…FE-3, §11) that activates each tab and asserts the panel
+leaves `Loading…`.
 
 ### 6.5 Error-shaped 200s
 
