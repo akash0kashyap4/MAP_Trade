@@ -710,9 +710,10 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
     """
     import time as _time
 
-    import yfinance as yf
     import pytz
     from datetime import time as dtime
+
+    from data.yfsession import ticker as _yf_ticker
 
     YF_MAP = {
         "NIFTY":     "^NSEI",
@@ -754,8 +755,10 @@ async def get_candles(instrument: str = "NIFTY", interval: str = "5m"):
             loop = asyncio.get_running_loop()
 
             def _fetch():
-                ticker = yf.Ticker(yf_sym)
-                return ticker.history(period=yf_period, interval=yf_interval)
+                # curl_cffi impersonation session — required so Yahoo doesn't
+                # block the request from the cloud host (the reason the chart
+                # was stuck on "waiting for data" in production).
+                return _yf_ticker(yf_sym).history(period=yf_period, interval=yf_interval)
 
             df = await loop.run_in_executor(None, _fetch)
             if df.empty:

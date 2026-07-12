@@ -4,18 +4,17 @@ from datetime import datetime, timedelta
 
 import pytz
 
+# Shared yfinance + curl_cffi impersonation session (see data/yfsession.py).
+# Yahoo blocks bare requests from datacenter IPs; the impersonation session is
+# what makes the same yfinance calls succeed on the cloud host.
 try:
     import yfinance as yf
     _YF_OK = True
 except ImportError:
+    yf = None
     _YF_OK = False
 
-# curl_cffi browser impersonation — Yahoo blocks bare requests from AWS/datacenter IPs
-try:
-    from curl_cffi import requests as _cf_requests
-    _YF_SESSION = _cf_requests.Session(impersonate="chrome")
-except Exception:
-    _YF_SESSION = None
+from data.yfsession import _SESSION as _YF_SESSION
 
 from config import TRADING, INSTRUMENTS
 from bot.order_executor import OrderExecutor
