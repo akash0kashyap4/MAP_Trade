@@ -80,6 +80,7 @@ async def test_news_brain_scan_persists_and_updates_store():
     from data.store import store
     assert store.news_insight["sentiment"] == "BULLISH"
     assert store.news_insight["score"] == 6
+    assert brain.last_status == "ok"
 
 
 @pytest.mark.asyncio
@@ -87,6 +88,9 @@ async def test_news_brain_scan_no_headlines_returns_empty():
     brain = NewsBrain(MagicMock())
     with patch("ai.news.fetch_headlines", AsyncMock(return_value=[])):
         assert await brain.scan() == {}
+    # Distinct status so the route can say "feeds unreachable" not "AI failed".
+    assert brain.last_status == "no_headlines"
+    assert brain.last_headline_count == 0
 
 
 @pytest.mark.asyncio
@@ -101,6 +105,9 @@ async def test_news_brain_scan_ai_failure_still_saves_headlines():
         assert await brain.scan() == {}
     save_items.assert_awaited_once()
     save_an.assert_not_awaited()
+    # Headlines reached us but AI produced nothing — distinct from no_headlines.
+    assert brain.last_status == "analysis_failed"
+    assert brain.last_headline_count == 1
 
 
 # ── reporter stats/formatting ─────────────────────────────────────────────────

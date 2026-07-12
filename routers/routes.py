@@ -891,10 +891,31 @@ async def news_scan_now(request: Request):
     if news_brain is None:
         raise HTTPException(status_code=503, detail="News brain not initialized")
     analysis = await news_brain.scan()
-    if not analysis:
-        return {"ok": False, "error": "No headlines fetched or AI analysis failed"}
-    return {"ok": True, "sentiment": analysis.get("overall_sentiment"),
-            "score": analysis.get("sentiment_score")}
+    if analysis:
+        return {"ok": True, "sentiment": analysis.get("overall_sentiment"),
+                "score": analysis.get("sentiment_score"),
+                "headline_count": news_brain.last_headline_count}
+
+    # Distinguish the two failure modes so the operator knows what to fix,
+    # rather than showing one ambiguous "scan failed" for both.
+    status = getattr(news_brain, "last_status", "no_headlines")
+    if status == "analysis_failed":
+        import config
+        if not getattr(config, "ANTHROPIC_API_KEY", ""):
+            detail = ("AI analysis unavailable: ANTHROPIC_API_KEY is not set. "
+                      f"Fetched {news_brain.last_headline_count} headlines (shown below), "
+                      "but sentiment analysis needs a valid key in .env.")
+        else:
+            detail = (f"Fetched {news_brain.last_headline_count} headlines, but the AI "
+                      "analysis step failed (model error or invalid response). Raw "
+                      "headlines are shown below; try SCAN NEWS NOW again.")
+        return {"ok": False, "reason": "analysis_failed", "error": detail,
+                "headline_count": news_brain.last_headline_count}
+
+    return {"ok": False, "reason": "no_headlines",
+            "error": ("No headlines could be fetched — the server could not reach any "
+                      "news feed. Check the server's outbound internet access (firewall / "
+                      "egress), then try again.")}
 
 
 @router.get("/news/today")

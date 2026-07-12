@@ -485,6 +485,89 @@
   .rpt-stat { text-align: center; min-width: 70px; }
   .rpt-stat .v { font-size: 15px; font-weight: 700; }
   .rpt-stat .k { font-family: var(--label); font-size: 8.5px; letter-spacing: 1.5px; color: var(--text-dim); }
+
+  /* ── NEWS PULSE ── */
+  .news-hero { position: relative; overflow: hidden; }
+  .news-hero::before {
+    content: ''; position: absolute; top: -40%; right: -10%; width: 220px; height: 220px;
+    border-radius: 50%; opacity: 0.10; pointer-events: none; filter: blur(30px);
+    background: radial-gradient(circle, currentColor 0%, transparent 70%);
+  }
+  .news-hero.win  { color: var(--green); }
+  .news-hero.loss { color: var(--red); }
+  .news-hero.neutral { color: var(--amber); }
+  .news-hero-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .news-hero-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--label); font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    padding: 5px 12px; border-radius: 3px; border: 1px solid currentColor;
+    text-shadow: 0 0 12px currentColor;
+  }
+  .news-hero-badge.win  { color: var(--green); }
+  .news-hero-badge.loss { color: var(--red); }
+  .news-hero-badge.neutral { color: var(--amber); }
+  .news-pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 8px currentColor; animation: newsPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes newsPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+  .news-hero-score { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1; }
+  .news-hero-score-max { font-size: 13px; color: var(--text-dim); font-weight: 400; }
+  .news-hero-summary {
+    font-size: 12px; line-height: 1.65; color: var(--text); margin-top: 10px;
+    padding-top: 10px; border-top: 1px solid var(--grid);
+  }
+  /* sentiment meter */
+  .news-meter { position: relative; height: 30px; margin: 14px 2px 4px; }
+  .news-meter-rail {
+    position: absolute; top: 9px; left: 0; right: 0; height: 4px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--red) 0%, var(--amber) 50%, var(--green) 100%);
+    opacity: .8;
+  }
+  .news-meter-mid { position: absolute; top: 4px; left: 50%; width: 1px; height: 14px; background: var(--text-dim); opacity: .5; }
+  .news-meter-dot {
+    position: absolute; top: 5px; width: 12px; height: 12px; border-radius: 50%;
+    transform: translateX(-50%); border: 2px solid var(--bg, #05050a); transition: left .5s ease;
+  }
+  .news-meter-scale {
+    position: absolute; top: 18px; left: 0; right: 0; display: flex; justify-content: space-between;
+    font-family: var(--label); font-size: 8px; letter-spacing: 1px; color: var(--text-dim);
+  }
+  .news-event {
+    display: flex; gap: 9px; align-items: flex-start;
+    border-left: 3px solid var(--grid); padding: 7px 10px; margin-bottom: 6px;
+    background: rgba(255,255,255,0.02); border-radius: 0 3px 3px 0;
+  }
+  .news-event-tag {
+    flex-shrink: 0; font-family: var(--label); font-size: 8.5px; letter-spacing: 1px;
+    padding: 2px 6px; border-radius: 2px; border: 1px solid currentColor;
+  }
+  .news-event-tag.win  { color: var(--green); border-color: var(--green); }
+  .news-event-tag.loss { color: var(--red); border-color: var(--red); }
+  .news-event-tag.neutral { color: var(--text-dim); border-color: var(--grid); }
+  .news-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .news-flag {
+    font-size: 10px; color: var(--amber); border: 1px solid var(--amber);
+    border-radius: 2px; padding: 3px 8px; background: rgba(255,170,0,0.06);
+  }
+  .news-empty, .news-error { text-align: center; padding: 24px 12px; }
+  .news-empty-icon { font-size: 26px; margin-bottom: 8px; opacity: .8; }
+  .news-empty-title { font-family: var(--label); font-size: 12px; letter-spacing: 1.5px; color: var(--text); margin-bottom: 5px; }
+  .news-count {
+    display: inline-block; background: var(--cyan); color: #05050a; font-weight: 700;
+    border-radius: 8px; padding: 0 7px; font-size: 9px; margin-left: 4px;
+  }
+  .news-headline {
+    display: flex; gap: 8px; align-items: baseline; padding: 6px 0;
+    border-bottom: 1px solid var(--grid);
+  }
+  .news-headline:last-child { border-bottom: none; }
+  .news-src {
+    flex-shrink: 0; font-family: var(--label); font-size: 8.5px; letter-spacing: 1px;
+    color: var(--cyan); min-width: 78px; text-transform: uppercase;
+  }
+  .news-link { color: var(--text); text-decoration: none; transition: color .15s; }
+  .news-link:hover { color: var(--cyan); text-decoration: underline; }
   .risk-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2484,40 +2567,82 @@ async function loadSuggestions() {
   } catch (e) { el.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load suggestions.</div>'; }
 }
 
+// Sentiment meter: score in [-10,+10] -> a glowing marker on a red→amber→green rail.
+function _sentimentMeter(score) {
+  const s = Math.max(-10, Math.min(10, Number(score) || 0));
+  const pct = ((s + 10) / 20) * 100;
+  const col = s > 1 ? 'var(--green)' : (s < -1 ? 'var(--red)' : 'var(--amber)');
+  return `<div class="news-meter" role="img" aria-label="Sentiment score ${s} of 10">
+    <div class="news-meter-rail"></div>
+    <div class="news-meter-mid"></div>
+    <div class="news-meter-dot" style="left:${pct}%;background:${col};box-shadow:0 0 10px ${col}"></div>
+    <div class="news-meter-scale"><span>-10</span><span>0</span><span>+10</span></div>
+  </div>`;
+}
+
+function _newsSentimentClass(v) {
+  return v === 'BULLISH' || v === 'POS' ? 'win'
+       : v === 'BEARISH' || v === 'NEG' ? 'loss' : 'neutral';
+}
+
 async function loadNewsPulse() {
   const anEl = document.getElementById('news-analysis');
   const itEl = document.getElementById('news-items');
   try {
-    const d = await (await fetch('/api/news/today')).json();
-    const a = d.analysis || {};
+    const res = await fetch('/api/news/today');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    const a = (d && typeof d === 'object' && d.analysis && typeof d.analysis === 'object') ? d.analysis : {};
+
     if (a.overall_sentiment) {
-      const cls = a.overall_sentiment === 'BULLISH' ? 'win' : (a.overall_sentiment === 'BEARISH' ? 'loss' : 'neutral');
-      anEl.innerHTML = `<div class="rpt-card">
-        <div class="rpt-row">
-          <span><span class="rpt-badge ${cls}">${esc(a.overall_sentiment)}</span>
-          <span style="margin-left:8px;font-weight:700;color:${(a.sentiment_score||0) >= 0 ? 'var(--green)' : 'var(--red)'}">score ${a.sentiment_score >= 0 ? '+' : ''}${a.sentiment_score || 0}</span></span>
+      const cls = _newsSentimentClass(a.overall_sentiment);
+      const score = a.sentiment_score || 0;
+      anEl.innerHTML = `<div class="rpt-card news-hero ${cls}">
+        <div class="news-hero-top">
+          <div class="news-hero-badge ${cls}">
+            <span class="news-pulse-dot"></span>${esc(a.overall_sentiment)}
+          </div>
+          <div class="news-hero-score" style="color:${score >= 0 ? 'var(--green)' : 'var(--red)'}">
+            ${score >= 0 ? '+' : ''}${score}<span class="news-hero-score-max">/10</span>
+          </div>
         </div>
-        <div class="rpt-text" style="margin-top:6px">${esc(a.summary_for_trader || '')}</div>
+        ${_sentimentMeter(score)}
+        ${a.summary_for_trader ? `<div class="news-hero-summary">${esc(a.summary_for_trader)}</div>` : ''}
         ${(a.key_events || []).length ? `<div class="rpt-h">KEY EVENTS</div>` +
-          a.key_events.map(ev => `<div class="pm-item" style="margin-bottom:4px">
-            <div class="rpt-text">${esc(ev.event || '')} <span class="rpt-badge ${ev.sentiment === 'POS' ? 'win' : (ev.sentiment === 'NEG' ? 'loss' : 'neutral')}" style="margin-left:5px">${esc(ev.sentiment || '')}</span></div>
-            <div class="rpt-dim" style="margin-top:2px">${esc(ev.why_it_matters || '')}</div>
+          a.key_events.map(ev => `<div class="news-event">
+            <span class="news-event-tag ${_newsSentimentClass(ev.sentiment)}">${esc(ev.sentiment || '·')}</span>
+            <div>
+              <div class="rpt-text">${esc(ev.event || '')}</div>
+              ${ev.why_it_matters ? `<div class="rpt-dim" style="margin-top:2px">${esc(ev.why_it_matters)}</div>` : ''}
+            </div>
           </div>`).join('') : ''}
-        ${(a.risk_flags || []).length ? `<div class="rpt-h">RISK FLAGS</div><div class="rpt-text" style="color:var(--amber)">${a.risk_flags.map(esc).join(' · ')}</div>` : ''}
+        ${(a.risk_flags || []).length ? `<div class="rpt-h">RISK FLAGS</div>
+          <div class="news-flags">${a.risk_flags.map(f => `<span class="news-flag">⚠ ${esc(f)}</span>`).join('')}</div>` : ''}
       </div>`;
     } else {
-      anEl.innerHTML = '<div class="rpt-card rpt-dim">No AI news analysis yet today. Auto-scans run 08:15 and 12:30 IST, or press SCAN NEWS NOW.</div>';
+      anEl.innerHTML = `<div class="rpt-card news-empty">
+        <div class="news-empty-icon">📡</div>
+        <div class="news-empty-title">No AI news pulse yet today</div>
+        <div class="rpt-dim">Auto-scans run at 08:15 &amp; 12:30 IST, or press <b>SCAN NEWS NOW</b>.</div>
+      </div>`;
     }
+
     const items = d.items || [];
     itEl.innerHTML = items.length ? `<div class="rpt-card">
-      <div class="rpt-h" style="margin-top:0">RAW HEADLINES (${items.length})</div>
-      ${items.map(n => `<div style="padding:4px 0;border-bottom:1px solid var(--grid)">
-        <span class="kn-cat">${esc(n.source || '')}</span>
-        <span class="rpt-text">${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}</span>
+      <div class="rpt-h" style="margin-top:0">RAW HEADLINES <span class="news-count">${items.length}</span></div>
+      ${items.map(n => `<div class="news-headline">
+        <span class="news-src">${esc(n.source || '—')}</span>
+        <span class="rpt-text">${n.url
+          ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="news-link">${esc(n.headline)}</a>`
+          : esc(n.headline)}</span>
       </div>`).join('')}
     </div>` : '';
   } catch (e) {
-    anEl.innerHTML = '<div class="rpt-card" style="color:var(--red)">Failed to load news.</div>';
+    anEl.innerHTML = `<div class="rpt-card news-error">
+      <div class="news-empty-icon">⚠️</div>
+      <div class="news-empty-title" style="color:var(--red)">Couldn't load news</div>
+      <div class="rpt-dim">${esc(e.message || 'Network error')} — retrying on next scan.</div>
+    </div>`;
     itEl.innerHTML = '';
   }
 }
@@ -2528,12 +2653,25 @@ async function newsScanNow() {
   try {
     const r = await fetch('/api/news/scan', { method: 'POST' });
     const d = await r.json();
-    if (!r.ok || d.ok === false) throw new Error(d.detail || d.error || 'scan failed');
-    _rptMsg('News scanned — sentiment ' + d.sentiment + ' ✓', false);
-    _rptLoaded['news'] = false;
-    _loadReportPane('news');
+    if (r.ok && d.ok !== false) {
+      const n = d.headline_count ? ` · ${d.headline_count} headlines` : '';
+      _rptMsg(`News scanned — sentiment ${d.sentiment}${n} ✓`, false);
+      _rptLoaded['news'] = false;
+      _loadReportPane('news');
+      return;
+    }
+    // Failed — show the specific, actionable reason from the backend.
+    const msg = d.error || d.detail || 'scan failed';
+    if (d.reason === 'analysis_failed') {
+      // Headlines were fetched; refresh so the raw list still shows.
+      _rptMsg('News: ' + msg, true);
+      _rptLoaded['news'] = false;
+      _loadReportPane('news');
+    } else {
+      _rptMsg('News scan failed: ' + msg, true);
+    }
   } catch (e) {
-    _rptMsg('News scan failed: ' + e.message, true);
+    _rptMsg('News scan failed: ' + (e.message || 'network error'), true);
   } finally {
     btn.disabled = false; btn.textContent = 'SCAN NEWS NOW';
   }

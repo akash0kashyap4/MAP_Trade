@@ -100,6 +100,11 @@ class NewsBrain:
 
     def __init__(self, agent):
         self.agent = agent  # TradingAgent — reuses its Claude plumbing
+        # Last scan outcome, so callers (the /news/scan route) can surface a
+        # specific, actionable reason instead of one vague "scan failed".
+        # One of: "idle" | "ok" | "no_headlines" | "analysis_failed"
+        self.last_status: str = "idle"
+        self.last_headline_count: int = 0
 
     async def scan(self, notify_fn=None) -> dict:
         """Full news scan. Safe to call multiple times a day (upserts)."""
@@ -108,17 +113,22 @@ class NewsBrain:
 
         today = _now_ist().strftime("%Y-%m-%d")
         headlines = await fetch_headlines()
+        self.last_headline_count = len(headlines)
         if not headlines:
+            self.last_status = "no_headlines"
             print("[news] No headlines fetched — skipping analysis")
             return {}
         print(f"[news] Fetched {len(headlines)} headlines")
 
         analysis = await self._analyze(headlines)
         if not analysis:
-            # Persist raw headlines even when AI analysis is unavailable
+            # Headlines reached us but the AI step produced nothing — persist the
+            # raw headlines so the UI still has something to show.
+            self.last_status = "analysis_failed"
             await db.save_news_items(today, headlines)
             return {}
 
+        self.last_status = "ok"
         # Tag each stored headline with sentiment where the AI mentioned it
         await db.save_news_items(today, headlines)
         await db.save_news_analysis(today, analysis)
