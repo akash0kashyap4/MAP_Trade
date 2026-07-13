@@ -149,9 +149,17 @@ _DECISION_MAX_TOKENS = 1536  # compact trade-decision JSON
 
 
 def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
-    """
-    Call Anthropic API directly using the API key from config.py.
-    """
+    """AI-brain entry point. Dispatches to the provider set by AI_PROVIDER in
+    .env ('claude' default, or 'gemini' for Google's free tier). Named
+    _ask_claude for backward compatibility — every caller routes through here."""
+    from config import AI_PROVIDER
+    if AI_PROVIDER == "gemini":
+        return _ask_gemini(system, user, max_retries, max_tokens)
+    return _ask_anthropic(system, user, max_retries, max_tokens)
+
+
+def _ask_anthropic(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
+    """Call the Anthropic API directly using the API key from config.py."""
     from anthropic import Anthropic
     from config import ANTHROPIC_API_KEY
 
@@ -182,6 +190,59 @@ def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | 
             # so 'model error' vs 'bad/expired key' vs 'rate limit' is diagnosable.
             print(f"[agent] Anthropic API attempt {attempt+1} FAILED "
                   f"[{type(e).__name__}] model={CLAUDE_MODEL}: {e}")
+            time.sleep(2)
+
+    return ""
+
+
+def _ask_gemini(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
+    """Call Google Gemini (free tier) via its REST API. Same contract as
+    _ask_anthropic: returns the model's text, or '' on failure so the existing
+    JSON-parse / fallback handling downstream still applies."""
+    import requests
+    from config import GEMINI_API_KEY, GEMINI_MODEL
+
+    if not GEMINI_API_KEY:
+        print("[agent] Error: AI_PROVIDER=gemini but GEMINI_API_KEY is not set in .env")
+        return ""
+
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent")
+    payload = {
+        # Gemini uses a dedicated system_instruction field (v1beta, 1.5/2.0+).
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {"maxOutputTokens": max_tokens or _MAX_TOKENS},
+    }
+
+    for attempt in range(max_retries + 1):
+        try:
+            resp = requests.post(
+                url, params={"key": GEMINI_API_KEY}, json=payload, timeout=45,
+            )
+            if resp.status_code != 200:
+                # 400 = bad key/model, 429 = free-tier rate limit, 403 = key perms
+                print(f"[agent] Gemini attempt {attempt+1} FAILED "
+                      f"[HTTP {resp.status_code}] model={GEMINI_MODEL}: {resp.text[:200]}")
+                time.sleep(2)
+                continue
+            data = resp.json()
+            cand = (data.get("candidates") or [{}])[0]
+            finish = cand.get("finishReason")
+            if finish == "MAX_TOKENS":
+                print(f"[agent] WARNING: Gemini hit maxOutputTokens={max_tokens or _MAX_TOKENS} "
+                      "— output may be truncated/invalid JSON")
+            parts = (cand.get("content") or {}).get("parts") or []
+            text = "".join(p.get("text", "") for p in parts).strip()
+            if not text:
+                print(f"[agent] Gemini attempt {attempt+1}: empty response "
+                      f"(finishReason={finish})")
+                time.sleep(2)
+                continue
+            return text
+        except Exception as e:
+            print(f"[agent] Gemini attempt {attempt+1} FAILED "
+                  f"[{type(e).__name__}] model={GEMINI_MODEL}: {e}")
             time.sleep(2)
 
     return ""

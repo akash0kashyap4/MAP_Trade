@@ -10,7 +10,18 @@ load_dotenv()
 ENV = os.getenv("ENV", "development").strip().lower()
 IS_PRODUCTION = ENV == "production"
 
+# AI Brain provider: "claude" (paid, default) | "gemini" (Google, free tier).
+# Switch with AI_PROVIDER in .env — no code change needed. Gemini's free tier is
+# enough to run the bot in paper mode at zero cost; Claude gives more consistent
+# decisions for live trading.
+AI_PROVIDER = os.getenv("AI_PROVIDER", "claude").strip().lower()
+
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+# Google Gemini (free tier) — get a key at https://aistudio.google.com/apikey
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL   = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
 

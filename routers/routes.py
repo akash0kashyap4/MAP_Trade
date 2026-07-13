@@ -1020,14 +1020,18 @@ async def news_scan_now(request: Request):
     status = getattr(news_brain, "last_status", "no_headlines")
     if status == "analysis_failed":
         import config
-        if not getattr(config, "ANTHROPIC_API_KEY", ""):
-            detail = ("AI analysis unavailable: ANTHROPIC_API_KEY is not set. "
+        provider = getattr(config, "AI_PROVIDER", "claude")
+        key = config.GEMINI_API_KEY if provider == "gemini" else config.ANTHROPIC_API_KEY
+        key_name = "GEMINI_API_KEY" if provider == "gemini" else "ANTHROPIC_API_KEY"
+        if not key:
+            detail = (f"AI analysis unavailable: {key_name} is not set (AI_PROVIDER={provider}). "
                       f"Fetched {news_brain.last_headline_count} headlines (shown below), "
                       "but sentiment analysis needs a valid key in .env.")
         else:
             detail = (f"Fetched {news_brain.last_headline_count} headlines, but the AI "
-                      "analysis step failed (model error or invalid response). Raw "
-                      "headlines are shown below; try SCAN NEWS NOW again.")
+                      f"analysis step failed (AI_PROVIDER={provider} — model error, rate "
+                      "limit, or invalid response). Raw headlines are shown below; check "
+                      "`journalctl -u ragi | grep agent` and try SCAN NEWS NOW again.")
         return {"ok": False, "reason": "analysis_failed", "error": detail,
                 "headline_count": news_brain.last_headline_count}
 
