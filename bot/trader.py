@@ -268,15 +268,28 @@ class LiveTrader:
             store.ai_status = "in_trade" if store.positions else "waiting"
 
     async def emergency_square_off(self) -> int:
-        """Exit every open position immediately and pause the bot."""
+        """Exit every open position immediately and pause the bot.
+
+        Each exit is isolated: if one position fails to close (broker/network
+        error), we still attempt the rest — an emergency circuit-breaker must
+        never leave live positions open because one order threw."""
         store.bot_paused = True
         closed = 0
+        failed = []
         for pos in list(store.positions):
-            await self._exit_position(pos, reason="EMERGENCY_SQUARE_OFF")
-            closed += 1
-        await _send_telegram(
-            f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
-        )
+            try:
+                await self._exit_position(pos, reason="EMERGENCY_SQUARE_OFF")
+                closed += 1
+            except Exception as e:
+                label = f"{pos.get('instrument')} {pos.get('strike')}{pos.get('type')}"
+                failed.append(label)
+                print(f"[trader] EMERGENCY square-off FAILED for {label}: {e}")
+
+        msg = f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
+        if failed:
+            msg += (f"\n⚠️ FAILED to close {len(failed)}: {', '.join(failed)} — "
+                    "CHECK YOUR BROKER TERMINAL MANUALLY.")
+        await _send_telegram(msg)
         store.ai_status = "waiting"
         return closed
 
