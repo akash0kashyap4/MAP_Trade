@@ -139,9 +139,13 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-# Trade decisions are short JSON; capping output keeps each call fast and cheap.
-# The old 4096 let the model ramble, adding latency to every backtest bar.
-_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "1024"))
+# Default output cap. Must stay generous: news analysis, premarket plans, and
+# daily reports return large JSON (summary + key_events + risk_flags + lessons),
+# and a too-low cap truncates them into invalid JSON ("analysis failed"). Only
+# the backtest per-bar decision passes a smaller override for speed (see
+# decide_trade_sync), where the output is a compact decision object.
+_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))
+_DECISION_MAX_TOKENS = 1536  # compact trade-decision JSON
 
 
 def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
@@ -167,9 +171,17 @@ def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | 
                     {"role": "user", "content": user}
                 ]
             )
+            # Surface a truncated response (hit max_tokens) — its JSON is usually
+            # unparseable downstream, and the cause is otherwise invisible.
+            if getattr(response, "stop_reason", None) == "max_tokens":
+                print(f"[agent] WARNING: response hit max_tokens={max_tokens or _MAX_TOKENS} "
+                      f"(model={CLAUDE_MODEL}) — output may be truncated/invalid JSON")
             return response.content[0].text
         except Exception as e:
-            print(f"[agent] Anthropic API attempt {attempt+1} error: {e}")
+            # Log the error class (AuthenticationError, NotFoundError, RateLimitError…)
+            # so 'model error' vs 'bad/expired key' vs 'rate limit' is diagnosable.
+            print(f"[agent] Anthropic API attempt {attempt+1} FAILED "
+                  f"[{type(e).__name__}] model={CLAUDE_MODEL}: {e}")
             time.sleep(2)
 
     return ""
@@ -311,7 +323,7 @@ class TradingAgent:
         """Synchronous version for backtest — calls _ask_claude directly, no asyncio."""
         context_block = "\n".join(self._day_context[-10:]) if self._day_context else "No prior signals today."
         full_user = _build_decision_user_msg(market_context, context_block)
-        raw = _ask_claude(DECISION_SYSTEM, full_user)
+        raw = _ask_claude(DECISION_SYSTEM, full_user, max_tokens=_DECISION_MAX_TOKENS)
 
         try:
             decision = _extract_json(raw)
