@@ -20,7 +20,7 @@ from config import TRADING, INSTRUMENTS
 from bot.order_executor import OrderExecutor
 from data.store import store
 from data import database as db
-from bot.risk import calc_quantity
+from bot.risk import calc_quantity, check_risk_limits, max_positions_reached
 from bot.strategy import build_market_context
 from bot.decision_log import DecisionLog
 from bot.fees import apply_slippage, realistic_pnl
@@ -223,7 +223,7 @@ class LiveTrader:
                 ltps = await asyncio.get_running_loop().run_in_executor(
                     None, fetch_option_ltps, store.positions
                 )
-                for pos in store.positions:
+                for pos in list(store.positions):
                     key = f"{pos['instrument']}_{pos['strike']}_{pos['type']}"
                     if key in ltps:
                         pos["ltp"] = ltps[key]
@@ -370,9 +370,22 @@ class LiveTrader:
                     instrument_key = f"NSE-{instrument}-{expiry}-{strike}-{option_type}"
 
                 try:
-                    await request_option_subscribe(instrument_key)
+                    request_option_subscribe(instrument_key)
                 except Exception as e:
                     print(f"[trader] Error subscribing to recovered option feed: {e}")
+
+                # Position dict MUST use the same keys as live entries ("entry",
+                # not "entry_price") — the SL monitor, exit path, and capital
+                # accounting all read pos["entry"]/["sl"]/["target"], and a
+                # recovered position with missing keys would crash those loops
+                # and run unprotected. When the signal carried no SL/target,
+                # fall back to the configured percentages so the position is
+                # never monitored against None.
+                entry_price = float(trade["entry_price"])
+                if not isinstance(sl_premium, (int, float)) or not sl_premium:
+                    sl_premium = round(entry_price * (1 - TRADING.get("fallback_sl_pct", 0.30)), 2)
+                if not isinstance(target_premium, (int, float)) or not target_premium:
+                    target_premium = round(entry_price * (1 + TRADING.get("fallback_target_pct", 0.60)), 2)
 
                 pos = {
                     "trade_db_id": trade["id"],
@@ -380,13 +393,15 @@ class LiveTrader:
                     "action": trade["action"],
                     "strike": trade["strike"],
                     "expiry": trade["expiry"],
-                    "entry_price": trade["entry_price"],
+                    "entry": entry_price,
+                    "entry_time": trade.get("entry_time"),
                     "quantity": trade["quantity"],
                     "signal_id": trade["signal_id"],
                     "instrument_key": instrument_key,
                     "ltp": ltp,
-                    "sl": sl_premium,
-                    "target": target_premium,
+                    "pnl": round(((ltp or entry_price) - entry_price) * trade["quantity"], 2),
+                    "sl": round(float(sl_premium), 2),
+                    "target": round(float(target_premium), 2),
                     "type": option_type,
                 }
                 store.positions.append(pos)
@@ -560,13 +575,39 @@ class LiveTrader:
             return
 
         if action in ("BUY_CE", "BUY_PE"):
-            if not store.new_entries_enabled:
-                log.guard_block("NewEntries", "new entries are currently disabled")
-                log.finalize("SKIP", "new_entries_disabled")
-                self._log_skip(instrument, "new entries are currently disabled", time_str, log)
-                return
             option_type = "CE" if action == "BUY_CE" else "PE"
             step = 100 if instrument == "SENSEX" else 50
+
+            # ── Position-level guards ────────────────────────────────────────
+            if max_positions_reached(store.positions):
+                msg = f"Max positions reached ({len(store.positions)}/{TRADING['max_positions']})"
+                log.guard_block("MaxPositions", msg)
+                log.finalize("SKIP", "max_positions")
+                self._log_skip(instrument, msg, time_str, log)
+                return
+            log.guard_pass("MaxPositions", f"{len(store.positions)}/{TRADING['max_positions']} open")
+
+            if any(p["instrument"] == instrument and p["type"] == option_type
+                   for p in store.positions):
+                msg = f"Already holding an open {instrument} {option_type} position"
+                log.guard_block("DuplicatePosition", msg)
+                log.finalize("SKIP", "duplicate_position")
+                self._log_skip(instrument, msg, time_str, log)
+                return
+            log.guard_pass("DuplicatePosition", "no open position in same instrument+direction")
+
+            # Correlated-entry guard: NIFTY/BANKNIFTY/SENSEX move together, so a
+            # same-direction entry across instruments within 5 minutes is the
+            # same bet twice, not diversification.
+            _cutoff = datetime.now(IST) - timedelta(minutes=5)
+            if any(e["direction"] == option_type and e["time"] >= _cutoff
+                   for e in self._recent_entries):
+                msg = f"Correlated {option_type} entry in another index within last 5 min"
+                log.guard_block("CorrelatedEntry", msg)
+                log.finalize("SKIP", "correlated_entry")
+                self._log_skip(instrument, msg, time_str, log)
+                return
+            log.guard_pass("CorrelatedEntry", "no correlated entries in last 5 min")
 
             opt_data = await asyncio.get_running_loop().run_in_executor(
                 None, get_live_option_from_chain, instrument_key, spot_price, option_type, step
@@ -595,15 +636,6 @@ class LiveTrader:
                      quoted=entry_quote, fill=entry_price)
 
             quantity = calc_quantity(instrument)
-            trade_cost = round(entry_price * quantity, 2)
-
-            if trade_cost > store.capital_available:
-                msg = f"Insufficient capital - need ₹{trade_cost:,.0f}, have ₹{store.capital_available:,.0f}"
-                log.guard_block("Capital", msg)
-                log.finalize("SKIP", "insufficient_capital")
-                self._log_skip(instrument, msg, time_str, log)
-                return
-            log.guard_pass("Capital", f"cost=₹{trade_cost:,.0f} within budget")
 
             # AI-provided SL/target from decision; fallback to % of entry if omitted
             ai_sl  = decision.get("sl_premium")
@@ -617,6 +649,31 @@ class LiveTrader:
             else:
                 target = round(entry_price * (1 + TRADING.get("fallback_target_pct", 0.60)), 2)
             log.info("AI_SL_TP", f"sl={sl} tgt={target} (ai_sl={ai_sl} ai_tgt={ai_tgt})")
+
+            # Session-level risk limits: profit lock, per-symbol trade cap,
+            # consecutive-loss cooldown, and per-trade risk cap (may downsize
+            # quantity to respect it).
+            allowed, risk_reason, adj_qty = await check_risk_limits(
+                instrument, action, entry_price, sl, quantity
+            )
+            if not allowed:
+                log.guard_block("RiskLimits", risk_reason)
+                log.finalize("SKIP", "risk_limits")
+                self._log_skip(instrument, risk_reason, time_str, log)
+                return
+            if adj_qty != quantity:
+                log.info("RiskLimits", risk_reason, old_qty=quantity, new_qty=adj_qty)
+                quantity = adj_qty
+            log.guard_pass("RiskLimits", risk_reason)
+
+            trade_cost = round(entry_price * quantity, 2)
+            if trade_cost > store.capital_available:
+                msg = f"Insufficient capital - need ₹{trade_cost:,.0f}, have ₹{store.capital_available:,.0f}"
+                log.guard_block("Capital", msg)
+                log.finalize("SKIP", "insufficient_capital")
+                self._log_skip(instrument, msg, time_str, log)
+                return
+            log.guard_pass("Capital", f"cost=₹{trade_cost:,.0f} within budget")
 
             entry_time = datetime.now(IST).isoformat()
 
@@ -709,6 +766,7 @@ class LiveTrader:
                     log.finalize("ENTERED_LIVE", f"{action} {atm_strike}{option_type} @ {position['entry']:.2f}",
                                  trade_db_id=trade_db_id, sl=sl, target=target, order_id=position.get("order_id"))
                     print(f"[trader] LIVE {action} {atm_strike}{option_type} @ {position['entry']:.2f} | SL={sl:.2f} TGT={target:.2f}")
+        elif action not in ("EXIT_ALL",):
             # AI returned NO_TRADE / HOLD - record the decision trail anyway so we can review later
             log.finalize("NO_TRADE", decision.get("reasoning", "")[:120])
             for line in log.summary_lines():
