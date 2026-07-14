@@ -123,6 +123,20 @@ AI_PROVIDER=claude_code CLAUDE_CLI_BIN=claude
 # fully offline
 AI_PROVIDER=ollama      OLLAMA_MODEL=llama3.1
 
+# fallback chain — try CLIs first, fall back to the paid API if unavailable
+AI_PROVIDER=claude_code,copilot,claude
+
 # verify the active provider end-to-end:
 python scripts/check_api.py
 ```
+
+### Fallback chain (`ai/providers/fallback.py`)
+
+`AI_PROVIDER` accepts a comma-separated list. `provider_registry.get_provider()`
+detects the comma and builds a `FallbackChainProvider` that tries each named
+provider in order, returning the first `LLMResponse(success=True, ...)`. Each
+link still gets its own retries (`LLM_MAX_RETRIES`) before the chain moves on,
+and every attempt is logged to `logs/runtime.log` so it's clear which provider
+actually served each decision. This is what "activate Claude CLI + Copilot CLI"
+resolves to operationally: both become live, in priority order, with the paid
+Anthropic API as the safety net so a CLI outage never stalls the live bot.

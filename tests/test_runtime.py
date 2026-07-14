@@ -87,6 +87,31 @@ def test_instances_are_reused():
     assert a is b
 
 
+# ── fallback chain ─────────────────────────────────────────────────────────────
+
+def test_fallback_chain_uses_first_success():
+    prov = registry.get_provider("claude_code,gemini")
+    assert prov.name == "fallback_chain"
+
+
+def test_fallback_chain_falls_through_on_failure():
+    from ai.providers.fallback import FallbackChainProvider
+    a = _FlakyProvider(_settings(max_retries=0), fail_times=99)
+    a.name = "a"
+    b = _FlakyProvider(_settings(max_retries=0), fail_times=0, text="from-b")
+    b.name = "b"
+    chain = FallbackChainProvider(_settings(), [a, b])
+    r = chain.ask("s", "u")
+    assert r.success and r.text == "from-b" and r.provider == "b"
+
+
+def test_fallback_chain_fails_when_all_fail():
+    from ai.providers.fallback import FallbackChainProvider
+    a = _FlakyProvider(_settings(max_retries=0), fail_times=99)
+    chain = FallbackChainProvider(_settings(), [a])
+    assert chain.ask("s", "u").success is False
+
+
 # ── adapter behaviour (mocked I/O) ────────────────────────────────────────────
 
 def test_claude_code_health_check_uses_which(monkeypatch):

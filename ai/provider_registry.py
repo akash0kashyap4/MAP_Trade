@@ -57,9 +57,22 @@ def available_providers() -> list[str]:
 
 
 def get_provider(name: str | None = None) -> BaseProvider:
-    """Return a cached provider instance by name (defaults to the active one)."""
+    """Return a cached provider instance by name (defaults to the active one).
+
+    `name` may be a single provider ("claude_code") or a comma-separated
+    fallback chain ("claude_code,copilot,claude") — the chain is tried in
+    order and the first provider to succeed serves the response.
+    """
     _register_builtins()
     key = (name or RUNTIME.default_provider or "claude").strip().lower()
+
+    if "," in key:
+        if key not in _INSTANCES:
+            from ai.providers.fallback import FallbackChainProvider
+            links = [get_provider(part.strip()) for part in key.split(",") if part.strip()]
+            _INSTANCES[key] = FallbackChainProvider(RUNTIME, links)
+        return _INSTANCES[key]
+
     cls = _CLASSES.get(key)
     if cls is None:
         raise ProviderError("registry",

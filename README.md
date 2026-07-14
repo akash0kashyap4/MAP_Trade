@@ -130,6 +130,11 @@ structured `ProviderError`. Runtime tuning: `LLM_TIMEOUT_S`, `LLM_MAX_RETRIES`,
 `logs/runtime.log`. Verify the active provider with
 `python scripts/check_api.py`. Full details: [`MIGRATION_REPORT.md`](MIGRATION_REPORT.md).
 
+**Fallback chain** — comma-separate providers to try them in order, first
+success wins (e.g. `AI_PROVIDER=claude_code,copilot,claude` tries the free
+Claude Code CLI, then Copilot CLI, then falls back to the paid API if both
+CLIs are unavailable). No code change; `ai/providers/fallback.py`.
+
 ---
 
 ## Setup
