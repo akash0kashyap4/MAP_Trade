@@ -1,5 +1,6 @@
 """
-Quick health check for the AI-brain provider (Claude or Gemini).
+Quick health check for the AI-brain provider (Anthropic API, Claude Code CLI,
+Copilot CLI, Ollama, or a fallback chain of these).
 
 Run on the server to confirm the configured provider + key actually work, using
 the bot's exact code path:
@@ -7,7 +8,7 @@ the bot's exact code path:
     /root/Ragi_bot/venv/bin/python scripts/check_api.py
 
 It makes one tiny request through the same dispatcher the bot uses and prints a
-clear PASS/FAIL. Set AI_PROVIDER=claude|gemini in .env to choose the provider.
+clear PASS/FAIL. Set AI_PROVIDER in .env to choose the provider (see .env.example).
 """
 from __future__ import annotations
 
@@ -25,11 +26,8 @@ def main() -> int:
         return 1
 
     provider = getattr(config, "AI_PROVIDER", "claude")
-    if provider == "gemini":
-        key, key_name, model = config.GEMINI_API_KEY, "GEMINI_API_KEY", config.GEMINI_MODEL
-    else:
-        from ai.agent import CLAUDE_MODEL
-        key, key_name, model = config.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY", CLAUDE_MODEL
+    from ai.agent import CLAUDE_MODEL
+    key, key_name, model = config.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY", CLAUDE_MODEL
 
     print(f"Provider:   {provider}")
     print(f"Model:      {model}")

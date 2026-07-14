@@ -149,7 +149,7 @@ def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | 
 
     All model access goes through the provider abstraction — this routes to the
     provider selected by AI_PROVIDER (config.runtime), whether that's the
-    Anthropic API, Gemini, the Claude Code CLI, Copilot CLI, or Ollama. Returns
+    Anthropic API, the Claude Code CLI, Copilot CLI, or Ollama. Returns
     the model's text, or '' on failure, so every existing caller's JSON-parse /
     fallback handling still applies unchanged. Named `_ask_claude` for backward
     compatibility — it is provider-agnostic despite the name. `max_retries` is

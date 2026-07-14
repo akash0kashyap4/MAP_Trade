@@ -39,7 +39,6 @@ main.py                  FastAPI app + lifespan startup
 │   ├── providers/       Provider abstraction — one adapter per runtime:
 │   │   ├── base.py         BaseProvider + LLMResponse + ProviderError contract
 │   │   ├── anthropic_api.py  Anthropic API (paid)      [default]
-│   │   ├── gemini.py         Google Gemini (free tier)
 │   │   ├── claude_code.py    Claude Code CLI (`claude -p`, no API key)
 │   │   ├── copilot_cli.py    GitHub Copilot CLI (adapter-ready)
 │   │   └── ollama.py         Local Ollama server (offline/free)
@@ -118,7 +117,6 @@ trading/RAG core never talks to a concrete provider. Pick the runtime with
 | `AI_PROVIDER` | Runtime | Notes |
 |---|---|---|
 | `claude` / `anthropic` | Anthropic API | paid, most consistent — **default**, best for live |
-| `gemini` | Google Gemini | free tier — good for paper/testing |
 | `claude_code` | Claude Code CLI (`claude -p`) | no API key; needs `claude` installed + logged in |
 | `copilot` | GitHub Copilot CLI | adapter-ready; set `COPILOT_CLI_ARGS` for your CLI |
 | `ollama` | local Ollama | fully offline/free; needs RAM/GPU |

@@ -21,7 +21,6 @@ def _register_builtins() -> None:
     if _CLASSES:
         return
     from ai.providers.anthropic_api import AnthropicAPIProvider
-    from ai.providers.gemini import GeminiProvider
     from ai.providers.claude_code import ClaudeCodeCLIProvider
     from ai.providers.copilot_cli import CopilotCLIProvider
     from ai.providers.ollama import OllamaProvider
@@ -31,8 +30,6 @@ def _register_builtins() -> None:
         "claude": AnthropicAPIProvider,
         "anthropic": AnthropicAPIProvider,
         "anthropic_api": AnthropicAPIProvider,
-        # Google Gemini (free tier)
-        "gemini": GeminiProvider,
         # Claude Code CLI (local `claude -p`)
         "claude_code": ClaudeCodeCLIProvider,
         "claude-code": ClaudeCodeCLIProvider,

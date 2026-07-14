@@ -1,7 +1,7 @@
 """
 Base provider contract for the AI brain.
 
-Every runtime (Anthropic API, Gemini, Claude Code CLI, Copilot CLI, Ollama)
+Every runtime (Anthropic API, Claude Code CLI, Copilot CLI, Ollama)
 implements the same interface and normalizes its output into `LLMResponse`. The
 core trading/RAG logic depends only on this contract — never on a concrete
 provider. Shared retry, timing, and logging live in `BaseProvider.ask`; adapters

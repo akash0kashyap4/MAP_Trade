@@ -67,7 +67,7 @@ def test_stream_falls_back_to_single_chunk():
 
 def test_default_provider_matches_config():
     prov = registry.get_active_provider()
-    assert prov.name in {"anthropic", "gemini", "claude_code", "copilot_cli", "ollama"}
+    assert prov.name in {"anthropic", "claude_code", "copilot_cli", "ollama", "fallback_chain"}
 
 
 def test_unknown_provider_raises_structured():
@@ -82,15 +82,15 @@ def test_known_aliases_resolve():
 
 
 def test_instances_are_reused():
-    a = registry.get_provider("gemini")
-    b = registry.get_provider("gemini")
+    a = registry.get_provider("ollama")
+    b = registry.get_provider("ollama")
     assert a is b
 
 
 # ── fallback chain ─────────────────────────────────────────────────────────────
 
 def test_fallback_chain_uses_first_success():
-    prov = registry.get_provider("claude_code,gemini")
+    prov = registry.get_provider("claude_code,ollama")
     assert prov.name == "fallback_chain"
 
 

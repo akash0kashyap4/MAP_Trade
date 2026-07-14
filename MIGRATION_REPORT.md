@@ -1,10 +1,17 @@
 # Migration Report — Provider-Abstracted AI Brain
 
 **Goal:** Move all model execution behind a provider abstraction so the core
-trading/RAG logic is provider-agnostic, with adapters for Anthropic API, Google
-Gemini, Claude Code CLI, GitHub Copilot CLI, and Ollama — selectable by config.
+trading/RAG logic is provider-agnostic, with adapters for Anthropic API,
+Claude Code CLI, GitHub Copilot CLI, and Ollama — selectable by config.
 
 **Status:** Complete. Full suite **216 passed**, ruff clean, no circular imports.
+
+> **Update:** The Gemini adapter shipped in the original migration was
+> **removed permanently** — the free tier's quota was too unreliable for a
+> live trading bot (`429` quota-exceeded mid-session). `ai/providers/gemini.py`,
+> `GEMINI_API_KEY`/`GEMINI_MODEL`, and the `gemini` registry alias are gone.
+> Claude Code CLI + Copilot CLI (both free, via login sessions) now cover the
+> free-runtime use case via the fallback chain (`AI_PROVIDER=claude_code,copilot,claude`).
 
 ---
 
@@ -19,9 +26,9 @@ ai/provider_registry.py        config-driven selection (AI_PROVIDER)
         ▼
 ai/providers/base.py           BaseProvider: retry · timeout · logging · normalize
         ▼  one adapter per runtime
- ┌───────────────┬───────────┬───────────────┬──────────────┬──────────┐
- │ anthropic_api │  gemini   │  claude_code  │ copilot_cli  │  ollama  │
- └───────────────┴───────────┴───────────────┴──────────────┴──────────┘
+ ┌───────────────┬───────────────┬──────────────┬──────────┐
+ │ anthropic_api │  claude_code  │ copilot_cli  │  ollama  │
+ └───────────────┴───────────────┴──────────────┴──────────┘
         ▼
 LLMResponse {success, text, raw, execution_ms, provider}
 ```
@@ -31,7 +38,6 @@ LLMResponse {success, text, raw, execution_ms, provider}
 |---|---|
 | `ai/providers/base.py` | `BaseProvider`, `LLMResponse`, `ProviderError`; shared retry/timeout/logging/streaming-fallback |
 | `ai/providers/anthropic_api.py` | Anthropic API adapter (paid) |
-| `ai/providers/gemini.py` | Google Gemini REST adapter (free tier) |
 | `ai/providers/claude_code.py` | Claude Code CLI adapter (`claude -p`) |
 | `ai/providers/copilot_cli.py` | GitHub Copilot CLI adapter (adapter-ready) |
 | `ai/providers/ollama.py` | Local Ollama REST adapter |
@@ -100,8 +106,8 @@ Copilot's exact prompt flags vary by CLI version, exposed via `COPILOT_CLI_ARGS`
 |---|---|
 | Broken imports | none (216 tests import the full graph, incl. `main`) |
 | Circular imports | none — `agent` imports the registry lazily; `base` imports `config.runtime` lazily; providers never import `agent` |
-| Dead code | removed (`_ask_anthropic`, `_ask_gemini`, `import time`, `_MAX_TOKENS`, old test) |
-| Provider coupling leaks | none — only `anthropic_api.py` touches the Anthropic SDK; only `gemini.py`/`ollama.py` touch their REST APIs |
+| Dead code | removed (`_ask_anthropic`, `_ask_gemini`, `import time`, `_MAX_TOKENS`, `gemini.py`, `GEMINI_API_KEY`/`GEMINI_MODEL`, old test) |
+| Provider coupling leaks | none — only `anthropic_api.py` touches the Anthropic SDK; only `ollama.py` touches its REST API |
 | Type/lint | ruff clean |
 | Security | keys read from `.env` via `config`; never logged (masked in `check_api.py`); CLI adapters pass the prompt as an argv element (no shell interpolation) |
 | Tests | `tests/test_runtime.py` covers default selection, contract, retries, failure normalization, CLI/Ollama adapters, and app-entry routing |
@@ -111,9 +117,6 @@ Copilot's exact prompt flags vary by CLI version, exposed via `COPILOT_CLI_ARGS`
 ## 5. How to switch runtimes
 
 ```bash
-# free (paper/testing)
-AI_PROVIDER=gemini      GEMINI_API_KEY=...        # .env
-
 # paid (live) — default
 AI_PROVIDER=claude      ANTHROPIC_API_KEY=...
 

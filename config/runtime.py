@@ -22,7 +22,6 @@ _LOG_DIR = _REPO_ROOT / "logs"
 class RuntimeConfig:
     # Which provider adapter powers the AI brain by default.
     #   claude / anthropic  -> Anthropic API (paid)
-    #   gemini              -> Google Gemini (free tier)
     #   claude_code         -> Claude Code CLI (`claude -p`)
     #   copilot / copilot_cli -> GitHub Copilot CLI
     #   ollama              -> local Ollama server
