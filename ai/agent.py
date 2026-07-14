@@ -7,7 +7,6 @@ import asyncio
 import json
 import os
 import re
-import time
 
 import pytz
 from datetime import datetime
@@ -139,113 +138,26 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
-# Default output cap. Must stay generous: news analysis, premarket plans, and
-# daily reports return large JSON (summary + key_events + risk_flags + lessons),
-# and a too-low cap truncates them into invalid JSON ("analysis failed"). Only
-# the backtest per-bar decision passes a smaller override for speed (see
-# decide_trade_sync), where the output is a compact decision object.
-_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))
-_DECISION_MAX_TOKENS = 1536  # compact trade-decision JSON
+# Trade decisions are compact JSON; the backtest per-bar path passes this smaller
+# cap for speed. The generous default output cap lives in config.runtime and is
+# applied by the provider layer (news/premarket/reports need the headroom).
+_DECISION_MAX_TOKENS = 1536
 
 
 def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
-    """AI-brain entry point. Dispatches to the provider set by AI_PROVIDER in
-    .env ('claude' default, or 'gemini' for Google's free tier). Named
-    _ask_claude for backward compatibility — every caller routes through here."""
-    from config import AI_PROVIDER
-    if AI_PROVIDER == "gemini":
-        return _ask_gemini(system, user, max_retries, max_tokens)
-    return _ask_anthropic(system, user, max_retries, max_tokens)
+    """AI-brain entry point for the whole app.
 
-
-def _ask_anthropic(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
-    """Call the Anthropic API directly using the API key from config.py."""
-    from anthropic import Anthropic
-    from config import ANTHROPIC_API_KEY
-
-    if not ANTHROPIC_API_KEY:
-        print("[agent] Error: ANTHROPIC_API_KEY not found in .env")
-        return ""
-
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    for attempt in range(max_retries + 1):
-        try:
-            response = client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=max_tokens or _MAX_TOKENS,
-                system=system,
-                messages=[
-                    {"role": "user", "content": user}
-                ]
-            )
-            # Surface a truncated response (hit max_tokens) — its JSON is usually
-            # unparseable downstream, and the cause is otherwise invisible.
-            if getattr(response, "stop_reason", None) == "max_tokens":
-                print(f"[agent] WARNING: response hit max_tokens={max_tokens or _MAX_TOKENS} "
-                      f"(model={CLAUDE_MODEL}) — output may be truncated/invalid JSON")
-            return response.content[0].text
-        except Exception as e:
-            # Log the error class (AuthenticationError, NotFoundError, RateLimitError…)
-            # so 'model error' vs 'bad/expired key' vs 'rate limit' is diagnosable.
-            print(f"[agent] Anthropic API attempt {attempt+1} FAILED "
-                  f"[{type(e).__name__}] model={CLAUDE_MODEL}: {e}")
-            time.sleep(2)
-
-    return ""
-
-
-def _ask_gemini(system: str, user: str, max_retries: int = 2, max_tokens: int | None = None) -> str:
-    """Call Google Gemini (free tier) via its REST API. Same contract as
-    _ask_anthropic: returns the model's text, or '' on failure so the existing
-    JSON-parse / fallback handling downstream still applies."""
-    import requests
-    from config import GEMINI_API_KEY, GEMINI_MODEL
-
-    if not GEMINI_API_KEY:
-        print("[agent] Error: AI_PROVIDER=gemini but GEMINI_API_KEY is not set in .env")
-        return ""
-
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent")
-    payload = {
-        # Gemini uses a dedicated system_instruction field (v1beta, 1.5/2.0+).
-        "system_instruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "user", "parts": [{"text": user}]}],
-        "generationConfig": {"maxOutputTokens": max_tokens or _MAX_TOKENS},
-    }
-
-    for attempt in range(max_retries + 1):
-        try:
-            resp = requests.post(
-                url, params={"key": GEMINI_API_KEY}, json=payload, timeout=45,
-            )
-            if resp.status_code != 200:
-                # 400 = bad key/model, 429 = free-tier rate limit, 403 = key perms
-                print(f"[agent] Gemini attempt {attempt+1} FAILED "
-                      f"[HTTP {resp.status_code}] model={GEMINI_MODEL}: {resp.text[:200]}")
-                time.sleep(2)
-                continue
-            data = resp.json()
-            cand = (data.get("candidates") or [{}])[0]
-            finish = cand.get("finishReason")
-            if finish == "MAX_TOKENS":
-                print(f"[agent] WARNING: Gemini hit maxOutputTokens={max_tokens or _MAX_TOKENS} "
-                      "— output may be truncated/invalid JSON")
-            parts = (cand.get("content") or {}).get("parts") or []
-            text = "".join(p.get("text", "") for p in parts).strip()
-            if not text:
-                print(f"[agent] Gemini attempt {attempt+1}: empty response "
-                      f"(finishReason={finish})")
-                time.sleep(2)
-                continue
-            return text
-        except Exception as e:
-            print(f"[agent] Gemini attempt {attempt+1} FAILED "
-                  f"[{type(e).__name__}] model={GEMINI_MODEL}: {e}")
-            time.sleep(2)
-
-    return ""
+    All model access goes through the provider abstraction — this routes to the
+    provider selected by AI_PROVIDER (config.runtime), whether that's the
+    Anthropic API, Gemini, the Claude Code CLI, Copilot CLI, or Ollama. Returns
+    the model's text, or '' on failure, so every existing caller's JSON-parse /
+    fallback handling still applies unchanged. Named `_ask_claude` for backward
+    compatibility — it is provider-agnostic despite the name. `max_retries` is
+    kept for signature compatibility; retries are governed by config.runtime.
+    """
+    from ai.provider_registry import get_active_provider
+    resp = get_active_provider().ask(system, user, max_tokens)
+    return resp.text if resp.success else ""
 
 
 class TradingAgent:

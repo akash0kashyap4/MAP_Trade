@@ -35,8 +35,17 @@ aerolink proxy) as the sole decision brain.
 ```
 main.py                  FastAPI app + lifespan startup
 ├── ai/
-│   ├── agent.py         Claude CLI subprocess — trade + trailing + nightly review
-│   ├── schema.py        Pydantic validators for every Claude JSON reply
+│   ├── agent.py         AI brain — trade + trailing + nightly review (provider-agnostic)
+│   ├── providers/       Provider abstraction — one adapter per runtime:
+│   │   ├── base.py         BaseProvider + LLMResponse + ProviderError contract
+│   │   ├── anthropic_api.py  Anthropic API (paid)      [default]
+│   │   ├── gemini.py         Google Gemini (free tier)
+│   │   ├── claude_code.py    Claude Code CLI (`claude -p`, no API key)
+│   │   ├── copilot_cli.py    GitHub Copilot CLI (adapter-ready)
+│   │   └── ollama.py         Local Ollama server (offline/free)
+│   ├── provider_registry.py  Config-driven provider selection (AI_PROVIDER)
+│   ├── claude_runtime.py     Claude Code CLI runtime facade
+│   ├── schema.py        Pydantic validators for every AI JSON reply
 │   ├── learner.py       Nightly self-learning from trade history
 │   └── prompts.py       System + user prompts (autonomy mode, no hard rules)
 ├── bot/
@@ -97,6 +106,29 @@ TRADING = {
 
 The NSE 2026 trading-holiday list is baked into `config.NSE_HOLIDAYS` and used by
 `is_market_day()` — the bot skips premarket + trading on holidays automatically.
+
+---
+
+## AI Provider Abstraction
+
+Every model call goes through the provider abstraction (`ai/providers/*`) — the
+trading/RAG core never talks to a concrete provider. Pick the runtime with
+`AI_PROVIDER` in `.env` (no code change):
+
+| `AI_PROVIDER` | Runtime | Notes |
+|---|---|---|
+| `claude` / `anthropic` | Anthropic API | paid, most consistent — **default**, best for live |
+| `gemini` | Google Gemini | free tier — good for paper/testing |
+| `claude_code` | Claude Code CLI (`claude -p`) | no API key; needs `claude` installed + logged in |
+| `copilot` | GitHub Copilot CLI | adapter-ready; set `COPILOT_CLI_ARGS` for your CLI |
+| `ollama` | local Ollama | fully offline/free; needs RAM/GPU |
+
+Every adapter normalizes output to `LLMResponse {success, text, raw, execution_ms,
+provider}`, shares retry/timeout/logging from `BaseProvider`, and raises
+structured `ProviderError`. Runtime tuning: `LLM_TIMEOUT_S`, `LLM_MAX_RETRIES`,
+`LLM_RETRY_BACKOFF_S` (see `config/runtime.py`). Runtime logs go to
+`logs/runtime.log`. Verify the active provider with
+`python scripts/check_api.py`. Full details: [`MIGRATION_REPORT.md`](MIGRATION_REPORT.md).
 
 ---
 
