@@ -136,6 +136,16 @@ def test_claude_code_parses_stdout():
         assert prov._generate("s", "u", None) == "decided"
 
 
+def test_claude_code_strips_anthropic_env_from_subprocess(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-leak")
+    prov = registry.get_provider("claude_code")
+    fake = MagicMock(returncode=0, stdout="ok", stderr="")
+    with patch("subprocess.run", return_value=fake) as mock_run:
+        prov._generate("s", "u", None)
+    passed_env = mock_run.call_args.kwargs["env"]
+    assert "ANTHROPIC_API_KEY" not in passed_env
+
+
 def test_ollama_parses_response():
     prov = registry.get_provider("ollama")
     resp = MagicMock(status_code=200)

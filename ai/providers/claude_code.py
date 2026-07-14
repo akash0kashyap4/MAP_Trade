@@ -7,6 +7,7 @@ installed and logged in on the host (set CLAUDE_CLI_BIN to override the path).
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 
@@ -19,6 +20,14 @@ class ClaudeCodeCLIProvider(BaseProvider):
     def _build_prompt(self, system: str, user: str) -> str:
         return f"{system}\n\n{user}" if system else user
 
+    def _subprocess_env(self) -> dict:
+        # The bot's own process carries ANTHROPIC_API_KEY for the anthropic_api
+        # adapter. If that leaks into this subprocess, the claude CLI sees an
+        # API key and refuses to use the `claude login` session instead
+        # ("connectors are disabled because ANTHROPIC_API_KEY ... takes
+        # precedence"). Strip it so the CLI always uses its own login.
+        return {k: v for k, v in os.environ.items() if not k.startswith("ANTHROPIC_")}
+
     def _generate(self, system: str, user: str, max_tokens: int | None) -> str:
         binary = self.settings.claude_cli_bin
         prompt = self._build_prompt(system, user)
@@ -27,6 +36,7 @@ class ClaudeCodeCLIProvider(BaseProvider):
                 [binary, "-p", prompt],
                 capture_output=True, text=True,
                 timeout=self.settings.request_timeout_s,
+                env=self._subprocess_env(),
             )
         except FileNotFoundError as e:
             raise ProviderError(self.name, f"'{binary}' not found — install the Claude Code CLI "
