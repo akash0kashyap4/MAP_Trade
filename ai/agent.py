@@ -157,6 +157,35 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
     return ""
 
 
+def _build_learned_rules_block(rules: dict) -> str:
+    """Convert learned rules dict into a compact text block for injection into DECISION_SYSTEM."""
+    if not rules:
+        return ""
+    lines = ["\n━━━ RAGI SELF-LEARNED STRATEGY (from past trades) ━━━"]
+    if rules.get("winning_setups"):
+        lines.append("Winning setups: " + " | ".join(rules["winning_setups"][:3]))
+    if rules.get("losing_setups"):
+        lines.append("Avoid: " + " | ".join(rules["losing_setups"][:3]))
+    if rules.get("best_time_windows"):
+        lines.append("Best time windows: " + ", ".join(rules["best_time_windows"]))
+    if rules.get("avoid_time_windows"):
+        lines.append("Avoid time windows: " + ", ".join(rules["avoid_time_windows"]))
+    if rules.get("best_market_conditions"):
+        lines.append("Best conditions: " + ", ".join(rules["best_market_conditions"]))
+    if rules.get("updated_confidence_threshold"):
+        lines.append(f"Self-calibrated confidence threshold: {rules['updated_confidence_threshold']}")
+    if rules.get("vix_threshold_suggested"):
+        lines.append(f"Avoid if VIX > {rules['vix_threshold_suggested']}")
+    if rules.get("iv_threshold_suggested"):
+        lines.append(f"Avoid if ATM IV > {rules['iv_threshold_suggested']}%")
+    if rules.get("key_insight"):
+        lines.append(f"Key insight: {rules['key_insight']}")
+    if rules.get("position_sizing_note"):
+        lines.append(f"Sizing: {rules['position_sizing_note']}")
+    lines.append("Use these learnings to refine your decision — they override generic guidance.")
+    return "\n".join(lines)
+
+
 class TradingAgent:
     """
     Ragi's AI brain.
@@ -166,6 +195,13 @@ class TradingAgent:
 
     def __init__(self):
         self._day_context: list[str] = []   # accumulates today's decisions for context
+        self._learned_rules: dict = {}       # loaded from DB; refreshed nightly
+
+    def update_learned_rules(self, rules: dict):
+        """Called by LiveTrader after nightly review or on startup."""
+        self._learned_rules = rules or {}
+        if rules:
+            print(f"[agent] Learned rules loaded — insight: {rules.get('key_insight', 'N/A')}")
 
     async def _ask(self, system: str, user: str) -> str:
         """Run blocking Anthropic API call in a thread so the event loop stays free."""
@@ -203,7 +239,9 @@ class TradingAgent:
     async def decide_trade(self, market_context: dict) -> dict:
         context_block = "\n".join(self._day_context[-10:]) if self._day_context else "No prior signals today."
         full_user = _build_decision_user_msg(market_context, context_block)
-        raw = await self._ask(DECISION_SYSTEM, full_user)
+        learned_block = _build_learned_rules_block(self._learned_rules)
+        system = DECISION_SYSTEM + learned_block if learned_block else DECISION_SYSTEM
+        raw = await self._ask(system, full_user)
 
         try:
             decision = _extract_json(raw)

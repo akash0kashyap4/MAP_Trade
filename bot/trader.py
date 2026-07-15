@@ -125,6 +125,14 @@ class LiveTrader:
         self._recent_entries: list[dict] = []   # tracks entries for correlated-position guard
         self._daily_loss_breaker_hit = False
 
+    async def load_learned_rules(self):
+        """Load latest learned rules from DB and push them into the agent."""
+        try:
+            rules = await db.get_latest_rules()
+            self.agent.update_learned_rules(rules)
+        except Exception as e:
+            print(f"[trader] Could not load learned rules: {e}")
+
     async def premarket_analysis(self):
         if store.bot_paused:
             print("[trader] premarket skipped - bot is paused")
@@ -137,6 +145,9 @@ class LiveTrader:
         if vix and vix > 0:
             global_data["india_vix"] = vix
             store.india_vix = vix
+        # Load previously learned rules before the day begins
+        await self.load_learned_rules()
+
         plan = await self.agent.premarket_analysis(global_data)
         store.premarket_bias = plan
         store.ai_status = "waiting"

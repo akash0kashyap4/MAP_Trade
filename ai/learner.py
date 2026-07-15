@@ -8,14 +8,17 @@ if TYPE_CHECKING:
 
 async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: dict, notify_fn=None):
     trades = await db_get_trades(days=30, completed_only=True)
-    if len(trades) < 10:
-        print("[learner] Not enough trades for nightly review (need 10+).")
+    if len(trades) < 5:
+        print(f"[learner] Not enough trades for nightly review (have {len(trades)}, need 5+).")
         return
 
     rules  = await agent.nightly_review(trades)
     stats  = _calculate_stats(trades)
 
     await db_save_rules(rules, stats)
+
+    # Push freshly learned rules back into the agent immediately
+    agent.update_learned_rules(rules)
 
     threshold = rules.get("updated_confidence_threshold")
     if isinstance(threshold, int) and 6 <= threshold <= 9:
