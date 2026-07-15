@@ -17,6 +17,18 @@ def setup_scheduler(trader, learner) -> AsyncIOScheduler:
         id="premarket",
     )
 
+    # Fires just after market open (09:15). If the 08:30 premarket plan / news
+    # analysis didn't complete, this alerts immediately instead of the failure
+    # being discovered at end-of-day review.
+    sched.add_job(
+        trader.pipeline_health_check,
+        "cron",
+        day_of_week="mon-fri",
+        hour=9,
+        minute=16,
+        id="pipeline_health",
+    )
+
     sched.add_job(
         trader.market_loop_tick,
         "cron",

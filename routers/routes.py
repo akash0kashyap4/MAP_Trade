@@ -252,6 +252,25 @@ async def status():
     return store.sse_payload()
 
 
+@router.get("/health/pipeline")
+async def pipeline_health():
+    """Premarket pipeline health for the dashboard.
+
+    `status` is "ok" once the 08:30 premarket plan/news analysis completes,
+    "failed" if it errored, or "pending" before it has run. An immediate
+    Telegram alert is also raised on failure at market open (see
+    trader.pipeline_health_check) — this endpoint lets the UI surface the same
+    state without waiting for the end-of-day review.
+    """
+    return {
+        "status":     store.premarket_status,
+        "ran_at":     store.premarket_ran_at,
+        "error":      store.premarket_error,
+        "today_bias": store.premarket_bias.get("bias") if store.premarket_bias else None,
+        "alerted":    store.health_alerted,
+    }
+
+
 @router.get("/trades/today")
 async def trades_today():
     try:

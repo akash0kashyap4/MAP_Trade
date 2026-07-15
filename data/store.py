@@ -38,6 +38,14 @@ class LiveStore:
         self.bot_paused: bool = False
         self.new_entries_enabled: bool = True
 
+        # Premarket pipeline health. The 08:30 premarket job (bias + news/global
+        # cues) must complete before market open; if it silently fails we want an
+        # immediate alert at market open, not a retroactive discovery at EOD.
+        self.premarket_status: str = "pending"   # "pending" | "ok" | "failed"
+        self.premarket_ran_at: str = ""          # ISO ts of last successful run
+        self.premarket_error: str = ""           # last failure reason (if any)
+        self.health_alerted: bool = False        # de-dupe: alert at most once/day
+
         # Candles & indicators per instrument (populated by REST poll)
         self.today_candles: Dict[str, List[list]] = {}
         self.indicators: Dict[str, dict] = {}
@@ -139,6 +147,11 @@ class LiveStore:
         self.indicators     = {}
         self.premarket_bias = {}
         self.today_volume   = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
+        # Pipeline health resets each day so a fresh premarket run is expected
+        self.premarket_status = "pending"
+        self.premarket_ran_at = ""
+        self.premarket_error  = ""
+        self.health_alerted   = False
         # bot_paused and new_entries_enabled are operator controls — intentionally NOT reset daily
 
     def sse_payload(self) -> dict:
@@ -183,6 +196,8 @@ class LiveStore:
             "feed_status":  self.feed_status,
             "bot_paused":   self.bot_paused,
             "new_entries":  self.new_entries_enabled,
+            "premarket_status": self.premarket_status,
+            "premarket_ran_at": self.premarket_ran_at,
             "today_bias":   self.premarket_bias.get("bias", "NEUTRAL"),
             "next_check":   self.next_check_time,
             "last_tick":    self.last_tick_time,

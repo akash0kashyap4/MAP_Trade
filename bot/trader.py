@@ -131,18 +131,79 @@ class LiveTrader:
             store.ai_status = "paused"
             return
         store.ai_status = "analyzing"
-        global_data = await _fetch_global_cues()
-        # Fetch India VIX via Upstox (more reliable than yfinance)
-        vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
-        if vix and vix > 0:
-            global_data["india_vix"] = vix
-            store.india_vix = vix
-        plan = await self.agent.premarket_analysis(global_data)
-        store.premarket_bias = plan
-        store.ai_status = "waiting"
-        print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
-        await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
-        self._market_open = True
+        try:
+            global_data = await _fetch_global_cues()
+            # Fetch India VIX via Upstox (more reliable than yfinance)
+            vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
+            if vix and vix > 0:
+                global_data["india_vix"] = vix
+                store.india_vix = vix
+            plan = await self.agent.premarket_analysis(global_data)
+            if not plan:
+                raise RuntimeError("premarket agent returned an empty plan")
+            store.premarket_bias = plan
+            # Mark the pipeline healthy so the market-open health check passes.
+            store.premarket_status = "ok"
+            store.premarket_ran_at = datetime.now(IST).isoformat()
+            store.premarket_error  = ""
+            store.ai_status = "waiting"
+            print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
+            await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
+            self._market_open = True
+        except Exception as e:
+            # Never fail silently: record the failure and alert immediately so a
+            # broken pipeline is caught now, not at end-of-day review.
+            import traceback
+            store.premarket_status = "failed"
+            store.premarket_error  = str(e)
+            store.ai_status = "waiting"
+            print(f"[trader] premarket FAILED: {e}\n{traceback.format_exc()}")
+            if not store.health_alerted:
+                store.health_alerted = True
+                await _send_telegram(
+                    "🚨 [Ragi] PREMARKET PIPELINE FAILED\n"
+                    f"{datetime.now(IST):%Y-%m-%d %H:%M} — bias/news analysis did not complete.\n"
+                    f"Reason: {e}\n"
+                    "Bot will default to NO-TRADE (capital preservation) until fixed."
+                )
+            # Still allow the market loop to run; it will see no bias and hold.
+            self._market_open = True
+
+    async def pipeline_health_check(self):
+        """Runs just after market open. If the premarket plan / news analysis
+        did not complete for today, raise an immediate alert instead of letting
+        the failure be discovered retroactively at the end-of-day review.
+
+        Implements the AI brain's HIGH-priority request:
+        "An automated health check/alert that fires immediately if the premarket
+        plan job or news analysis job fails to run by market open."
+        """
+        from config import is_market_day
+        now = datetime.now(IST)
+        if not is_market_day(now.date()):
+            return
+        if store.bot_paused:
+            return  # operator paused the bot; premarket is intentionally skipped
+
+        healthy = store.premarket_status == "ok" and bool(store.premarket_bias)
+        if healthy:
+            print(f"[trader] pipeline health OK — bias={store.premarket_bias.get('bias')} "
+                  f"(ran {store.premarket_ran_at})")
+            return
+
+        if store.health_alerted:
+            return  # already alerted once today (e.g. from premarket_analysis)
+        store.health_alerted = True
+
+        reason = store.premarket_error or "premarket plan job did not run before market open"
+        msg = (
+            f"🚨 [Ragi] PIPELINE HEALTH ALERT {now:%H:%M}\n"
+            f"Premarket plan / news analysis did NOT complete for {now:%Y-%m-%d}.\n"
+            f"Status: {store.premarket_status} | Reason: {reason}\n"
+            "Bot defaults to NO-TRADE (capital preservation) until this is fixed."
+        )
+        print(msg)
+        await _send_telegram(msg)
 
     def _check_market_open(self) -> bool:
         from datetime import datetime
