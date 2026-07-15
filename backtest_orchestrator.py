@@ -18,14 +18,15 @@ from typing import Optional
 from bhav.data.cache import ParquetCache
 from bhav.data.instruments import InstrumentResolver
 from bhav.data.provider import BrokerDataProvider
-from bhav.data.providers.groww_provider import GrowwDataProvider
-from bhav.data.providers.local_csv_provider import LocalCsvProvider
-from bhav.data.providers.upstox_provider import UpstoxProvider
 from bhav.data.reader import DataReader
 from bhav.data.underlyings import default_lot_size
 from bhav.engine.bar_engine import BarEngine, EngineConfig
 from bhav.engine.strategy import Strategy
 from bhav.metrics.report import compute_metrics
+
+# Provider classes are imported lazily inside _create_provider so that a
+# missing optional dependency for one broker (e.g. the Upstox client, which is
+# not bundled) never breaks the groww/csv paths or module import itself.
 
 log = logging.getLogger("ragi.backtest_orchestrator")
 
@@ -39,36 +40,50 @@ class BacktestResult:
         self.config = config
         self.strategy_name = strategy_name
 
-        self.total_trades = len(portfolio.trades)
-        self.wins = sum(1 for t in portfolio.trades if t.pnl > 0)
-        self.losses = sum(1 for t in portfolio.trades if t.pnl < 0)
+        # NOTE: the engine's Portfolio exposes `closed_trades`; each Trade has
+        # `pnl_net` (P&L after costs) and `qty` — not `trades`/`pnl`/`quantity`.
+        trades = portfolio.closed_trades
+        self.total_trades = len(trades)
+        self.wins = sum(1 for t in trades if t.pnl_net > 0)
+        self.losses = sum(1 for t in trades if t.pnl_net < 0)
         self.win_rate = round(self.wins / max(self.total_trades, 1) * 100, 1)
-        self.total_pnl = round(sum(t.pnl for t in portfolio.trades), 2)
-        self.profit_factor = round(
-            sum(t.pnl for t in portfolio.trades if t.pnl > 0)
-            / max(sum(abs(t.pnl) for t in portfolio.trades if t.pnl < 0), 0.01),
-            2,
-        )
-        self.sharpe_ratio = metrics.sharpe
-        self.max_drawdown = round(metrics.max_drawdown_pct, 2)
+        self.total_pnl = round(sum(t.pnl_net for t in trades), 2)
+        gross_loss = sum(abs(t.pnl_net) for t in trades if t.pnl_net < 0)
+        gross_win = sum(t.pnl_net for t in trades if t.pnl_net > 0)
+        self.profit_factor = round(gross_win / gross_loss, 2) if gross_loss > 0 else float("inf")
+        self.sharpe_ratio = round(metrics.sharpe, 2)
+        self.max_drawdown = round(metrics.max_drawdown_amount, 2)   # rupees
+        self.max_drawdown_pct = round(metrics.max_drawdown_pct, 2)
         self.cagr = round(metrics.cagr_pct, 2)
+        self.total_costs = round(metrics.total_costs, 2)
         self.trades = [
             {
                 "entry_time": str(t.entry_time),
-                "entry_price": t.entry_price,
+                "entry_price": round(t.entry_price, 2),
                 "exit_time": str(t.exit_time),
-                "exit_price": t.exit_price,
-                "pnl": round(t.pnl, 2),
-                "quantity": t.quantity,
+                "exit_price": round(t.exit_price, 2),
+                "pnl": round(t.pnl_net, 2),
+                "quantity": t.qty,
+                "reason": t.reason,
             }
-            for t in portfolio.trades[-30:]
+            for t in trades[-30:]
         ]
 
 
 def _compile_strategy_code(code: str) -> Strategy:
-    """Compile user strategy code and return instantiated Strategy object.
+    """Compile user strategy code and return an instantiated Strategy object.
 
-    User code must define a `strategy` variable of type Strategy.
+    User code must subclass bhav.engine.strategy.Strategy, implement on_bar,
+    and expose a module-level `strategy = MyStrategy()`. Inside on_bar the
+    Context exposes: ctx.spot() (current index price), ctx.buy_option(
+    option_type="CE"|"PE", strike_offset=0, lots=1), ctx.sell_option(...),
+    ctx.close(instrument_key) and ctx.close_all(). The engine auto-squares-off
+    open positions at 15:15, so a manual exit is optional. on_day_start/
+    on_day_end/on_start/on_end are optional lifecycle hooks.
+
+    WARNING: this runs arbitrary Python via exec(); callers must ensure only a
+    trusted, authenticated operator can reach it (see the /api/backtest/custom
+    route, which is gated behind auth + same-origin).
 
     Args:
         code: Python code as string
@@ -123,14 +138,17 @@ def _create_provider(
         ValueError: If broker invalid or required tokens missing
     """
     if broker == "groww":
+        from bhav.data.providers.groww_provider import GrowwDataProvider
         return GrowwDataProvider(api_token=groww_token)
     elif broker == "upstox":
         if not upstox_token:
             raise ValueError("upstox_token required for broker=upstox")
+        from bhav.data.providers.upstox_provider import UpstoxProvider
         return UpstoxProvider(token=upstox_token)
     elif broker == "csv":
         if not csv_dir:
             raise ValueError("csv_dir required for broker=csv")
+        from bhav.data.providers.local_csv_provider import LocalCsvProvider
         return LocalCsvProvider(csv_dir)
     else:
         raise ValueError(f"Unknown broker: {broker}. Use 'groww', 'upstox', or 'csv'")

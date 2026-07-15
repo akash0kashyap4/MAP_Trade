@@ -1,3 +1,8 @@
+> ⚠️ **CORRECTION (2026-07-15):** As originally shipped, this feature could not be
+> imported, placed zero trades, shipped crashing examples, and exposed
+> unauthenticated code execution. All fixed and verified on 2026-07-15 — see
+> **`AUDIT_REPORT.md`** for findings and the end-to-end proof.
+
 # Phase 3: RAGI BOT Integration - Complete
 
 **Status:** ✅ **COMPLETE**  

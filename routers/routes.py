@@ -398,8 +398,15 @@ _custom_backtest_status = {"running": False, "progress": 0, "result": None, "err
 
 
 @router.post("/backtest/custom")
-async def custom_backtest(req: CustomBacktestRequest, background_tasks: BackgroundTasks):
+async def custom_backtest(req: CustomBacktestRequest, background_tasks: BackgroundTasks, request: Request):
     """Run custom strategy via Bhav engine with provider selection.
+
+    SECURITY: this endpoint executes arbitrary user-supplied Python
+    (`strategy_code`) in-process. That is inherent to a "bring your own
+    strategy" feature and cannot be made safe by input validation alone, so it
+    is gated behind authentication + same-origin, exactly like the other
+    state-changing endpoints. It must only ever be reachable by the
+    authenticated operator behind the dashboard login — never exposed publicly.
 
     Request body:
     {
@@ -415,6 +422,10 @@ async def custom_backtest(req: CustomBacktestRequest, background_tasks: Backgrou
 
     Returns immediately with status "started". Poll GET /api/backtest/custom/status for results.
     """
+    _check_same_origin(request)
+    from main import require_auth  # deferred to avoid circular import at module load
+    require_auth(request)
+
     try:
         req.validate()
     except ValueError as e:

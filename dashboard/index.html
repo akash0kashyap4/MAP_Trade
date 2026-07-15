@@ -883,27 +883,23 @@
             <textarea class="bt-code-editor" id="btc-code" spellcheck="false">from bhav.engine.strategy import Strategy, Context
 
 class MyStrategy(Strategy):
-    def __init__(self):
-        self.name = "MyStrategy"
+    name = "MyStrategy"
 
-    def on_start(self, ctx: Context):
-        pass
+    def on_day_start(self, ctx: Context):
+        # Runs on the first bar of each trading day.
+        self._entered = False
 
     def on_bar(self, ctx: Context):
-        # First bar of the day: buy ATM call
-        if ctx.bar_index == 0:
-            ctx.entry_call(
-                strike_offset=0,   # 0 = ATM, 1 = +1 step OTM
-                option_type="CE",
-                target_pct=1.0,    # exit at +100%
-                sl_pct=0.50,       # exit at -50%
-            )
+        # Enter once per day: buy the ATM call.
+        # ctx.spot() -> current index price. strike_offset in ATM steps
+        # (0 = ATM, +1 = one step OTM). lots multiplies the lot size.
+        if not getattr(self, "_entered", False):
+            key = ctx.buy_option(option_type="CE", strike_offset=0, lots=1)
+            if key:
+                self._entered = True
 
-    def on_day_end(self, ctx: Context):
-        ctx.square_off()  # close all positions at 15:30
-
-    def on_end(self, ctx: Context):
-        pass
+    # The engine auto-squares-off every open position at 15:15 (square_off_time),
+    # so there is no manual exit here. To exit early, call ctx.close_all().
 
 strategy = MyStrategy()</textarea>
           </div>
@@ -2002,58 +1998,42 @@ const EXAMPLE_STRATEGIES = {
   momentum: `from bhav.engine.strategy import Strategy, Context
 
 class MomentumBreakout(Strategy):
-    """Buy on breakout above day open + 0.3%."""
-    def __init__(self):
-        self.name = "MomentumBreakout"
-        self.has_entered = False
+    """Buy an ATM call once spot trades 0.3% above the day's open."""
+    name = "MomentumBreakout"
 
-    def on_start(self, ctx: Context):
-        self.has_entered = False
+    def on_day_start(self, ctx: Context):
+        self.day_open = ctx.spot()   # first bar's price
+        self.entered = False
 
     def on_bar(self, ctx: Context):
-        if self.has_entered:
+        if self.entered:
             return
-        # Enter after first 30 bars on momentum
-        if ctx.bar_index >= 30 and ctx.spot_price > ctx.day_open * 1.003:
-            ctx.entry_call(strike_offset=0, option_type="CE",
-                           target_pct=1.0, sl_pct=0.40)
-            self.has_entered = True
+        if ctx.spot() > self.day_open * 1.003:
+            if ctx.buy_option(option_type="CE", strike_offset=0, lots=1):
+                self.entered = True
 
-    def on_day_end(self, ctx: Context):
-        ctx.square_off()
-        self.has_entered = False
-
-    def on_end(self, ctx: Context):
-        pass
+    # Engine auto-squares-off at 15:15.
 
 strategy = MomentumBreakout()`,
 
   meanrev: `from bhav.engine.strategy import Strategy, Context
 
 class MeanReversion(Strategy):
-    """Fade intraday extreme drops with a put."""
-    def __init__(self):
-        self.name = "MeanReversion"
-        self.has_entered = False
+    """Fade an intraday drop: buy a put once spot falls 0.5% below the open."""
+    name = "MeanReversion"
 
-    def on_start(self, ctx: Context):
-        self.has_entered = False
+    def on_day_start(self, ctx: Context):
+        self.day_open = ctx.spot()
+        self.entered = False
 
     def on_bar(self, ctx: Context):
-        if self.has_entered:
+        if self.entered:
             return
-        # Enter after 60 bars if spot drops >0.5% from open
-        if ctx.bar_index >= 60 and ctx.spot_price < ctx.day_open * 0.995:
-            ctx.entry_call(strike_offset=0, option_type="PE",
-                           target_pct=1.0, sl_pct=0.35)
-            self.has_entered = True
+        if ctx.spot() < self.day_open * 0.995:
+            if ctx.buy_option(option_type="PE", strike_offset=0, lots=1):
+                self.entered = True
 
-    def on_day_end(self, ctx: Context):
-        ctx.square_off()
-        self.has_entered = False
-
-    def on_end(self, ctx: Context):
-        pass
+    # Engine auto-squares-off at 15:15.
 
 strategy = MeanReversion()`
 };

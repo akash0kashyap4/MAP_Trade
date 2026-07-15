@@ -6,13 +6,33 @@ Allows gradual migration from Upstox to other brokers.
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
 
 from bhav.data.provider import BrokerDataProvider, BrokerError, OptionContract
-from bhav.data.upstox_client import UpstoxClient, UpstoxError, TokenExpiredError
 
-if TYPE_CHECKING:
-    pass
+
+# The concrete Upstox client (bhav.data.upstox_client) is intentionally NOT
+# bundled — this project is migrating away from Upstox. Importing it lazily
+# keeps this module importable (so the provider factory and test suite don't
+# crash) while any real use surfaces a clean BrokerError explaining the gap.
+class UpstoxError(BrokerError):
+    """Placeholder so callers can `except UpstoxError` even when the real
+    Upstox client isn't installed."""
+
+
+class TokenExpiredError(UpstoxError):
+    """Placeholder mirroring the real client's token-expiry error."""
+
+
+def _load_upstox_client():
+    """Import the real UpstoxClient on demand; raise BrokerError if absent."""
+    try:
+        from bhav.data.upstox_client import UpstoxClient  # type: ignore
+        return UpstoxClient
+    except ImportError as e:
+        raise BrokerError(
+            "Upstox support is not bundled in this build (bhav.data.upstox_client "
+            "is missing). Use --broker groww or --broker csv instead."
+        ) from e
 
 
 class UpstoxProvider(BrokerDataProvider):
@@ -38,6 +58,9 @@ class UpstoxProvider(BrokerDataProvider):
             retries: Number of retry attempts on transient failures.
             backoff: Initial backoff delay (seconds) for exponential retry.
         """
+        if not token:
+            raise BrokerError("Upstox provider requires a non-empty access token")
+        UpstoxClient = _load_upstox_client()  # raises BrokerError if not bundled
         try:
             self._client = UpstoxClient(
                 token=token,

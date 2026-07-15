@@ -1,3 +1,7 @@
+> ⚠️ **CORRECTION (2026-07-15):** The "tests passing / complete" claims below were
+> not verified when written. A later audit found the suite failed collection and
+> several counts were wrong. See **`AUDIT_REPORT.md`** for the real, executed state.
+
 # Phase 2: Core Module Refactoring - COMPLETE
 
 **Status:** ✅ **COMPLETE**  

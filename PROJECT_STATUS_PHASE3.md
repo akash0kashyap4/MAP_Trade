@@ -1,3 +1,8 @@
+> ⚠️ **CORRECTION (2026-07-15):** This status report overstated completion
+> ("production-ready", "25/31 passing"). A subsequent audit found and fixed
+> critical breakage in the Phase 3 integration. See **`AUDIT_REPORT.md`** for the
+> verified state.
+
 # Bhav-Groww Migration Project: Status Report (Phase 1-3)
 
 **Project Status:** ✅ **COMPLETE (Core Deliverables)**  

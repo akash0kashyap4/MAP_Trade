@@ -33,6 +33,7 @@ class InstrumentResolver:
         *,
         atm_step: int | None = None,
         fallback_offsets: tuple[int, ...] = (1, -1, 2, -2),
+        synthesize_contracts: bool = True,
     ) -> None:
         """Initialize resolver.
 
@@ -41,11 +42,17 @@ class InstrumentResolver:
             underlying_key: Spot/index symbol
             atm_step: ATM rounding step (auto-lookup if None)
             fallback_offsets: Strikes to try if exact not found
+            synthesize_contracts: If True, and the provider returns an empty
+                option chain (the common case for Groww/CSV, which don't expose
+                a historical chain endpoint), build a synthetic OptionContract
+                on demand so the engine can still fetch synthetic candles and
+                place trades. Set False to require a real chain match.
         """
         self.provider = provider
         self.underlying_key = underlying_key
         self.atm_step = atm_step if atm_step is not None else default_atm_step(underlying_key)
         self.fallback_offsets = fallback_offsets
+        self.synthesize_contracts = synthesize_contracts
         self._expiries: list[date] | None = None
         self._chain_cache: dict[date, dict[tuple[int, str], OptionContract]] = {}
 
@@ -112,4 +119,28 @@ class InstrumentResolver:
             if k in chain:
                 return ResolvedOption(contract=chain[k], adjusted=True)
 
+        # No real chain match. Most providers (Groww, CSV) return an empty
+        # chain because there is no historical option-chain endpoint, so the
+        # loops above never match. Fall back to a synthetic contract whose key
+        # the provider's get_option_candles() understands (5-part format:
+        # "<underlying>|<expiry>|<strike>|<CE/PE>"). The reader then serves
+        # synthetic (Black-Scholes) or file-backed candles for it.
+        if self.synthesize_contracts:
+            return ResolvedOption(
+                contract=self._synthetic_contract(expiry, strike, option_type),
+                adjusted=False,
+            )
+
         return None
+
+    def _synthetic_contract(
+        self, expiry: date, strike: int, option_type: str
+    ) -> OptionContract:
+        """Build an on-demand OptionContract for providers without a chain API."""
+        instrument_key = f"{self.underlying_key}|{expiry:%Y-%m-%d}|{strike}|{option_type}"
+        return OptionContract(
+            instrument_key=instrument_key,
+            strike=strike,
+            option_type=option_type,
+            expiry=expiry,
+        )

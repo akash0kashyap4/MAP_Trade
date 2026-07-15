@@ -1,4 +1,6 @@
 """Integration tests: provider consistency and fallback behavior."""
+import importlib.util
+
 import pytest
 from datetime import date
 from pathlib import Path
@@ -10,6 +12,15 @@ from bhav.data.providers.groww_provider import GrowwDataProvider
 from bhav.data.providers.local_csv_provider import LocalCsvProvider
 from bhav.engine.strategy import Strategy, Context
 from bhav.engine.bar_engine import BarEngine, EngineConfig
+
+# The Groww provider delegates to groww.historical, which imports the live bot
+# config (needs python-dotenv + credentials). Tests that actually hit that path
+# can only run inside the deployed bot environment, so skip them elsewhere
+# instead of reporting a misleading failure.
+_GROWW_LIVE = importlib.util.find_spec("dotenv") is not None
+requires_groww_env = pytest.mark.skipif(
+    not _GROWW_LIVE, reason="requires live Groww env (python-dotenv + credentials)"
+)
 
 
 class DummyStrategy(Strategy):
@@ -35,6 +46,7 @@ class DummyStrategy(Strategy):
 class TestProviderInteroperability:
     """Test that providers work with the engine."""
 
+    @requires_groww_env
     def test_groww_provider_with_engine(self):
         """Groww provider integrates with BarEngine."""
         provider = GrowwDataProvider()
@@ -80,6 +92,7 @@ class TestProviderInteroperability:
 class TestDataReaderWithProviders:
     """Test DataReader works with all providers."""
 
+    @requires_groww_env
     def test_reader_with_groww(self):
         """DataReader works with GrowwDataProvider."""
         provider = GrowwDataProvider()
@@ -105,6 +118,7 @@ class TestDataReaderWithProviders:
 class TestInstrumentResolverWithProviders:
     """Test InstrumentResolver works with all providers."""
 
+    @requires_groww_env
     def test_resolver_with_groww(self):
         """InstrumentResolver works with GrowwDataProvider."""
         provider = GrowwDataProvider()
@@ -128,6 +142,7 @@ class TestInstrumentResolverWithProviders:
 
         provider.close()
 
+    @requires_groww_env
     def test_resolver_nearest_expiry(self):
         """Nearest expiry selection is provider-independent."""
         provider = GrowwDataProvider()
@@ -145,6 +160,7 @@ class TestInstrumentResolverWithProviders:
 class TestFallbackBehavior:
     """Test fallback behavior across providers."""
 
+    @requires_groww_env
     def test_groww_graceful_degradation(self):
         """Groww provider degrades gracefully on missing data."""
         provider = GrowwDataProvider()

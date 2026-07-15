@@ -1,8 +1,19 @@
 """Tests for GrowwDataProvider."""
+import importlib.util
+
 import pytest
 from datetime import date
 from bhav.data.providers.groww_provider import GrowwDataProvider
 from bhav.data.provider import BrokerError
+
+# Tests that reach groww.historical (spot/option/expiry fetch, or the synthetic
+# generator that depends on spot data) require the live bot env (python-dotenv +
+# credentials). Skip them elsewhere rather than fail. The pure Black-Scholes
+# math tests below have no such dependency and always run.
+requires_groww_env = pytest.mark.skipif(
+    importlib.util.find_spec("dotenv") is None,
+    reason="requires live Groww env (python-dotenv + credentials)",
+)
 
 
 class TestGrowwProviderInit:
@@ -56,18 +67,21 @@ class TestGrowwProviderInterface:
 class TestGrowwProviderReturnTypes:
     """Test return types (without hitting real APIs)."""
 
+    @requires_groww_env
     def test_spot_candles_returns_list(self):
         """get_spot_candles returns list (may be empty)."""
         provider = GrowwDataProvider()
         result = provider.get_spot_candles("NSE_INDEX|Nifty 50", date(2025, 1, 16))
         assert isinstance(result, list)
 
+    @requires_groww_env
     def test_option_candles_returns_list(self):
         """get_option_candles returns list (may be empty)."""
         provider = GrowwDataProvider()
         result = provider.get_option_candles("NSE_INDEX|Nifty 50|2025-01-16|24000|CE", date(2025, 1, 16))
         assert isinstance(result, list)
 
+    @requires_groww_env
     def test_expiries_returns_sorted_list(self):
         """get_expiries returns sorted list of dates."""
         provider = GrowwDataProvider()
@@ -143,6 +157,7 @@ class TestGrowwProviderBlackScholes:
 class TestGrowwProviderCandles:
     """Test candle format expectations."""
 
+    @requires_groww_env
     def test_bs_synthesize_option_candles_format(self):
         """Synthesized option candles have correct format."""
         # Create a mock spot candle
