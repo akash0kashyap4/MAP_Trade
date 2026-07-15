@@ -27,7 +27,7 @@ before calling an audit done.
 | KB · RISK | Default to no-trade when bias/news unavailable | ✅ Correct behavior; now also alerts |
 | AI REQ · HIGH/TOOL | Auto health-check/alert if premarket/news job fails by market open | ✅ Implemented |
 | AI REQ · MEDIUM/DATA | Sector/index breadth (NIFTY vs BANKNIFTY vs SENSEX, adv/decline) | ⏳ Open follow-up |
-| AI REQ · MEDIUM/SIGNAL | Lightweight fallback intraday bias (ORB / VWAP) when pipeline down | ⏳ Open follow-up |
+| AI REQ · MEDIUM/SIGNAL | Lightweight fallback intraday bias (ORB / VWAP) when pipeline down | ✅ Implemented — `bot/fallback_bias.py` |
 
 ## Premarket pipeline health check (implemented)
 
@@ -40,6 +40,18 @@ before calling an audit done.
   alerts once/day. This is the AI brain's HIGH-priority request.
 - `GET /api/health/pipeline` exposes the same state for the dashboard.
 - Health fields reset in `store.reset_daily()`.
+
+## Fallback intraday bias (implemented)
+
+- `bot/fallback_bias.py::compute_fallback_bias(candles)` derives a bias purely
+  from intraday candles: Opening-Range Breakout (first 15 min) + VWAP position.
+  Always `risk_level="HIGH"`, `source="fallback_orb_vwap"`.
+- `trader._ensure_fallback_bias()` (called each tick) populates
+  `store.premarket_bias` with it **only while `premarket_status != "ok"`** — it
+  never overrides a real premarket bias and never flips status to "ok", so the
+  health alert still fires. This turns a pipeline outage into a genuine (if
+  low-confidence) read instead of a blank no-trade.
+- Tests: `tests/test_fallback_bias.py`.
 
 ## Environment note
 

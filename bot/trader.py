@@ -23,6 +23,7 @@ from data.store import store
 from data import database as db
 from bot.risk import calc_quantity
 from bot.strategy import build_market_context
+from bot.fallback_bias import compute_fallback_bias
 from bot.decision_log import DecisionLog
 from bot.fees import apply_slippage, realistic_pnl
 from groww.historical import (
@@ -205,6 +206,27 @@ class LiveTrader:
         print(msg)
         await _send_telegram(msg)
 
+    def _ensure_fallback_bias(self) -> None:
+        """Populate store.premarket_bias with a rule-based ORB/VWAP read when the
+        premarket pipeline is unavailable.
+
+        Implements the AI brain's MEDIUM/SIGNAL request. Only active while
+        `premarket_status != "ok"`, so a healthy premarket bias is never
+        overridden. It deliberately does NOT flip premarket_status to "ok", so
+        the health alert still fires — the fallback informs decisions, it does
+        not hide the outage. Recomputed each tick; logged only when the bias
+        changes.
+        """
+        if store.premarket_status == "ok":
+            return
+        candles = store.today_candles.get("NIFTY") or []
+        fb = compute_fallback_bias(candles)
+        prev = store.premarket_bias.get("bias") if store.premarket_bias else None
+        store.premarket_bias = fb
+        if fb.get("bias") != prev:
+            print(f"[trader] fallback bias (pipeline down): {fb['bias']} "
+                  f"strength={fb['bias_strength']} | {fb['reasoning']}")
+
     def _check_market_open(self) -> bool:
         from datetime import datetime
         from config import is_market_day
@@ -271,6 +293,11 @@ class LiveTrader:
                             await self._exit_position(pos, reason="SL", current_price=ltps[key])
                         elif ltps[key] >= pos["target"]:
                             await self._exit_position(pos, reason="TARGET", current_price=ltps[key])
+
+            # If the premarket pipeline is down, derive a rule-based ORB/VWAP
+            # bias from NIFTY's intraday candles so the bot trades on a genuine
+            # (HIGH-risk) read instead of a blank one. Never overrides a real bias.
+            self._ensure_fallback_bias()
 
             for instrument in ["NIFTY", "BANKNIFTY", "SENSEX"]:
                 await self._process_instrument(instrument, time_str)
