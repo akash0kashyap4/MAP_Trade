@@ -364,6 +364,49 @@
     transition: width 0.5s;
     animation: progress-pulse 1s ease-in-out infinite;
   }
+  /* Backtest tab strip */
+  .bt-tabs { display: flex; gap: 0; margin-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .bt-tab {
+    font-family: var(--label); font-size: 10px; font-weight: 600;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 4px 12px; cursor: pointer; color: var(--text-dim);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .bt-tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  .bt-tab-panel { display: none; }
+  .bt-tab-panel.active { display: block; }
+  /* Code editor */
+  .bt-code-editor {
+    width: 100%; height: 220px;
+    background: #04040b; border: 1px solid var(--border);
+    color: #b8e0ff; font-family: var(--mono); font-size: 11px;
+    line-height: 1.5; padding: 8px 10px; resize: vertical;
+    border-radius: 2px; outline: none; tab-size: 2;
+    overflow-y: auto; spellcheck: false;
+  }
+  .bt-code-editor:focus { border-color: var(--cyan); }
+  .bt-code-label { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; margin-bottom: 4px; }
+  .bt-custom-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .bt-provider-select {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+    padding: 5px 8px; border-radius: 2px; outline: none;
+  }
+  .bt-provider-select:focus { border-color: var(--cyan); }
+  .bt-custom-hint {
+    font-size: 10px; color: var(--text-dim); margin-top: 6px; line-height: 1.5;
+  }
+  .bt-custom-hint a { color: var(--cyan); text-decoration: none; cursor: pointer; }
+  /* equity sparkline */
+  .bt-equity-bar {
+    display: flex; align-items: flex-end; gap: 1px;
+    height: 30px; margin-top: 6px;
+  }
+  .bt-equity-bar span {
+    flex: 1; border-radius: 1px 1px 0 0; min-width: 3px;
+    transition: height 0.3s;
+  }
   .settings-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -774,40 +817,128 @@
 
         <!-- SECTION: Backtest -->
         <div id="sec-backtest" class="nav-section-panel" style="display:none">
-        <!-- Backtest Controls -->
-        <div class="section-label" style="margin-bottom:6px">BACKTEST</div>
-        <div class="bt-row">
-          <input class="bt-input" id="bt-instrument" value="NIFTY" placeholder="NIFTY" style="width:70px">
-          <input class="bt-input" id="bt-start" value="2026-07-01" placeholder="start" style="width:90px">
-          <input class="bt-input" id="bt-end" value="2026-07-10" placeholder="end" style="width:90px">
-          <button class="bt-btn" id="bt-run-btn" onclick="runBacktest()">▶ RUN</button>
-          <button class="bt-btn" id="bt-runall-btn" onclick="runAllStrategies()" style="background:var(--cyan);color:var(--bg)">⚡ ALL</button>
-          <button class="bt-btn" id="bt-runai-btn" onclick="runAiOnly()" style="display:none;background:#ffc800;color:#000;font-weight:700">🤖 AI ONLY</button>
+        <div class="section-label" style="margin-bottom:8px">BACKTEST</div>
+
+        <!-- Tab strip -->
+        <div class="bt-tabs">
+          <div class="bt-tab active" id="bt-tab-predefined" onclick="switchBtTab('predefined')">Predefined</div>
+          <div class="bt-tab" id="bt-tab-custom" onclick="switchBtTab('custom')">Custom Strategy</div>
         </div>
-        <div class="bt-row" style="margin-top:4px;gap:6px">
-          <select class="bt-input" id="bt-strategy" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:11px;padding:3px 6px">
-            <option value="first_candle">First Candle Direction</option>
-            <option value="orb15">Opening Range Breakout (15 min)</option>
-            <option value="rsi_reversal">RSI Reversal (30 min)</option>
-            <option value="ema_trend">EMA Trend Follow (9/21/50)</option>
-            <option value="gap_direction">Gap &amp; Go (open vs prev close)</option>
-          </select>
-          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-dim);cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="bt-use-ai" style="cursor:pointer" onchange="onAiToggle()"> AI brain
-          </label>
-        </div>
-        <div id="bt-progress" style="display:none">
-          <div class="progress-bar"><div class="progress-fill" id="bt-prog-fill"></div></div>
-          <div style="font-size:10px;color:var(--text-dim);margin-top:4px" id="bt-prog-label">running…</div>
-        </div>
-        <div class="bt-result" id="bt-result" style="display:none">
-          <div id="bt-stats"></div>
-          <div id="bt-trades-table" style="margin-top:8px;max-height:200px;overflow-y:auto"></div>
-        </div>
-        <div id="bt-compare-result" style="display:none;margin-top:8px">
-          <div style="font-size:10px;color:var(--cyan);letter-spacing:1px;margin-bottom:6px" id="bt-compare-header"></div>
-          <div id="bt-compare-table"></div>
-        </div>
+
+        <!-- ── Panel: Predefined strategies ── -->
+        <div class="bt-tab-panel active" id="bt-panel-predefined">
+          <div class="bt-row">
+            <input class="bt-input" id="bt-instrument" value="NIFTY" placeholder="NIFTY" style="width:70px">
+            <input class="bt-input" id="bt-start" value="2026-07-01" placeholder="start" style="width:90px">
+            <input class="bt-input" id="bt-end" value="2026-07-10" placeholder="end" style="width:90px">
+            <button class="bt-btn" id="bt-run-btn" onclick="runBacktest()">▶ RUN</button>
+            <button class="bt-btn" id="bt-runall-btn" onclick="runAllStrategies()" style="background:var(--cyan);color:var(--bg)">⚡ ALL</button>
+            <button class="bt-btn" id="bt-runai-btn" onclick="runAiOnly()" style="display:none;background:#ffc800;color:#000;font-weight:700">🤖 AI ONLY</button>
+          </div>
+          <div class="bt-row" style="margin-top:4px;gap:6px">
+            <select class="bt-input" id="bt-strategy" style="flex:1;background:var(--bg3);color:var(--text);border:1px solid var(--border);font-family:var(--mono);font-size:11px;padding:3px 6px">
+              <option value="first_candle">First Candle Direction</option>
+              <option value="orb15">Opening Range Breakout (15 min)</option>
+              <option value="rsi_reversal">RSI Reversal (30 min)</option>
+              <option value="ema_trend">EMA Trend Follow (9/21/50)</option>
+              <option value="gap_direction">Gap &amp; Go (open vs prev close)</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-dim);cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="bt-use-ai" style="cursor:pointer" onchange="onAiToggle()"> AI brain
+            </label>
+          </div>
+          <div id="bt-progress" style="display:none">
+            <div class="progress-bar"><div class="progress-fill" id="bt-prog-fill"></div></div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px" id="bt-prog-label">running…</div>
+          </div>
+          <div class="bt-result" id="bt-result" style="display:none">
+            <div id="bt-stats"></div>
+            <div id="bt-trades-table" style="margin-top:8px;max-height:200px;overflow-y:auto"></div>
+          </div>
+          <div id="bt-compare-result" style="display:none;margin-top:8px">
+            <div style="font-size:10px;color:var(--cyan);letter-spacing:1px;margin-bottom:6px" id="bt-compare-header"></div>
+            <div id="bt-compare-table"></div>
+          </div>
+        </div><!-- /bt-panel-predefined -->
+
+        <!-- ── Panel: Custom Strategy ── -->
+        <div class="bt-tab-panel" id="bt-panel-custom">
+
+          <!-- Date / params row -->
+          <div class="bt-custom-row">
+            <input class="bt-input" id="btc-start" value="2025-01-16" placeholder="start" style="width:90px" title="Start date YYYY-MM-DD">
+            <input class="bt-input" id="btc-end"   value="2025-01-31" placeholder="end"   style="width:90px" title="End date YYYY-MM-DD">
+            <input class="bt-input" id="btc-capital" value="500000" placeholder="capital" style="width:80px" title="Starting capital Rs">
+            <select class="bt-provider-select" id="btc-broker" title="Data provider">
+              <option value="groww">Groww</option>
+              <option value="csv">CSV (offline)</option>
+              <option value="upstox">Upstox</option>
+            </select>
+            <input class="bt-input" id="btc-underlying" value="NSE_INDEX|Nifty 50" placeholder="underlying" style="width:140px" title="Instrument key">
+          </div>
+
+          <!-- Code editor -->
+          <div style="margin-top:8px">
+            <div class="bt-code-label">STRATEGY CODE <span style="color:#555;font-size:9px;letter-spacing:0">(must define <span style="color:var(--cyan)">strategy = MyClass()</span>)</span></div>
+            <textarea class="bt-code-editor" id="btc-code" spellcheck="false">from bhav.engine.strategy import Strategy, Context
+
+class MyStrategy(Strategy):
+    def __init__(self):
+        self.name = "MyStrategy"
+
+    def on_start(self, ctx: Context):
+        pass
+
+    def on_bar(self, ctx: Context):
+        # First bar of the day: buy ATM call
+        if ctx.bar_index == 0:
+            ctx.entry_call(
+                strike_offset=0,   # 0 = ATM, 1 = +1 step OTM
+                option_type="CE",
+                target_pct=1.0,    # exit at +100%
+                sl_pct=0.50,       # exit at -50%
+            )
+
+    def on_day_end(self, ctx: Context):
+        ctx.square_off()  # close all positions at 15:30
+
+    def on_end(self, ctx: Context):
+        pass
+
+strategy = MyStrategy()</textarea>
+          </div>
+
+          <!-- Action row -->
+          <div class="bt-custom-row" style="margin-top:6px">
+            <button class="bt-btn" id="btc-run-btn" onclick="runCustomBacktest()" style="letter-spacing:2px">▶ RUN CUSTOM</button>
+            <button class="bt-btn" onclick="resetCustomEditor()" style="border-color:var(--text-dim);color:var(--text-dim)">↺ RESET</button>
+            <div id="btc-status-chip" style="display:none;font-size:10px;color:var(--amber);letter-spacing:1px">RUNNING…</div>
+          </div>
+
+          <!-- Hint -->
+          <div class="bt-custom-hint">
+            Strategy code runs against real Groww data with Black-Scholes fallback.
+            <a onclick="loadExampleStrategy('momentum')">Load momentum example</a> ·
+            <a onclick="loadExampleStrategy('meanrev')">Load mean-reversion</a>
+          </div>
+
+          <!-- Progress -->
+          <div id="btc-progress" style="display:none;margin-top:6px">
+            <div class="progress-bar"><div class="progress-fill" id="btc-prog-fill"></div></div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px" id="btc-prog-label">compiling strategy…</div>
+          </div>
+
+          <!-- Result -->
+          <div class="bt-result" id="btc-result" style="display:none;margin-top:8px">
+            <div id="btc-stats"></div>
+            <div id="btc-equity" class="bt-equity-bar" style="margin-top:8px"></div>
+            <div id="btc-trades-table" style="margin-top:8px;max-height:220px;overflow-y:auto"></div>
+          </div>
+
+          <!-- Error -->
+          <div id="btc-error" style="display:none;margin-top:8px;padding:8px;background:#1a0509;border:1px solid var(--red);border-radius:2px;font-size:10px;color:var(--red);white-space:pre-wrap;word-break:break-word"></div>
+
+        </div><!-- /bt-panel-custom -->
 
         <div style="height:20px"></div>
         </div><!-- /sec-backtest -->
@@ -1855,6 +1986,256 @@ async function runBacktest() {
     btn.disabled = false;
     prog.style.display = 'none';
     console.error(e);
+  }
+}
+
+// ── Custom Strategy Backtest ──────────────────────────────────────────────────
+
+function switchBtTab(name) {
+  ['predefined','custom'].forEach(t => {
+    document.getElementById('bt-tab-'+t).classList.toggle('active', t === name);
+    document.getElementById('bt-panel-'+t).classList.toggle('active', t === name);
+  });
+}
+
+const EXAMPLE_STRATEGIES = {
+  momentum: `from bhav.engine.strategy import Strategy, Context
+
+class MomentumBreakout(Strategy):
+    """Buy on breakout above day open + 0.3%."""
+    def __init__(self):
+        self.name = "MomentumBreakout"
+        self.has_entered = False
+
+    def on_start(self, ctx: Context):
+        self.has_entered = False
+
+    def on_bar(self, ctx: Context):
+        if self.has_entered:
+            return
+        # Enter after first 30 bars on momentum
+        if ctx.bar_index >= 30 and ctx.spot_price > ctx.day_open * 1.003:
+            ctx.entry_call(strike_offset=0, option_type="CE",
+                           target_pct=1.0, sl_pct=0.40)
+            self.has_entered = True
+
+    def on_day_end(self, ctx: Context):
+        ctx.square_off()
+        self.has_entered = False
+
+    def on_end(self, ctx: Context):
+        pass
+
+strategy = MomentumBreakout()`,
+
+  meanrev: `from bhav.engine.strategy import Strategy, Context
+
+class MeanReversion(Strategy):
+    """Fade intraday extreme drops with a put."""
+    def __init__(self):
+        self.name = "MeanReversion"
+        self.has_entered = False
+
+    def on_start(self, ctx: Context):
+        self.has_entered = False
+
+    def on_bar(self, ctx: Context):
+        if self.has_entered:
+            return
+        # Enter after 60 bars if spot drops >0.5% from open
+        if ctx.bar_index >= 60 and ctx.spot_price < ctx.day_open * 0.995:
+            ctx.entry_call(strike_offset=0, option_type="PE",
+                           target_pct=1.0, sl_pct=0.35)
+            self.has_entered = True
+
+    def on_day_end(self, ctx: Context):
+        ctx.square_off()
+        self.has_entered = False
+
+    def on_end(self, ctx: Context):
+        pass
+
+strategy = MeanReversion()`
+};
+
+function loadExampleStrategy(name) {
+  const code = EXAMPLE_STRATEGIES[name];
+  if (code) document.getElementById('btc-code').value = code;
+}
+
+function resetCustomEditor() {
+  document.getElementById('btc-code').value = EXAMPLE_STRATEGIES.momentum;
+  document.getElementById('btc-result').style.display = 'none';
+  document.getElementById('btc-error').style.display = 'none';
+  document.getElementById('btc-progress').style.display = 'none';
+  document.getElementById('btc-status-chip').style.display = 'none';
+}
+
+let _customBtPollTimer = null;
+
+async function runCustomBacktest() {
+  const btn = document.getElementById('btc-run-btn');
+  const chip = document.getElementById('btc-status-chip');
+  const errEl = document.getElementById('btc-error');
+  const resEl = document.getElementById('btc-result');
+  const progEl = document.getElementById('btc-progress');
+  const progFill = document.getElementById('btc-prog-fill');
+  const progLbl = document.getElementById('btc-prog-label');
+
+  const code = document.getElementById('btc-code').value.trim();
+  if (!code) { errEl.textContent = 'Strategy code cannot be empty.'; errEl.style.display = ''; return; }
+
+  const payload = {
+    strategy_code: code,
+    start_date:  document.getElementById('btc-start').value.trim(),
+    end_date:    document.getElementById('btc-end').value.trim(),
+    capital:     parseFloat(document.getElementById('btc-capital').value) || 500000,
+    underlying:  document.getElementById('btc-underlying').value.trim() || 'NSE_INDEX|Nifty 50',
+    broker:      document.getElementById('btc-broker').value,
+  };
+
+  // Reset UI
+  btn.disabled = true;
+  chip.style.display = '';
+  errEl.style.display = 'none';
+  resEl.style.display = 'none';
+  progEl.style.display = '';
+  progFill.style.width = '5%';
+  progLbl.textContent = 'submitting…';
+
+  try {
+    const resp = await fetch('/api/backtest/custom', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({detail: resp.statusText}));
+      throw new Error(err.detail || resp.statusText);
+    }
+
+    progFill.style.width = '15%';
+    progLbl.textContent = 'compiling strategy…';
+
+    // Poll for result
+    if (_customBtPollTimer) clearInterval(_customBtPollTimer);
+    let elapsed = 0;
+    _customBtPollTimer = setInterval(async () => {
+      elapsed += 2;
+      // Animate fill up to 90% while running
+      const pct = Math.min(90, 15 + elapsed * 2);
+      progFill.style.width = pct + '%';
+      progLbl.textContent = `running… (${elapsed}s)`;
+
+      try {
+        const st = await (await fetch('/api/backtest/custom/status')).json();
+        if (!st.running && (st.result || st.error)) {
+          clearInterval(_customBtPollTimer);
+          _customBtPollTimer = null;
+          progFill.style.width = '100%';
+          btn.disabled = false;
+          chip.style.display = 'none';
+          progEl.style.display = 'none';
+
+          if (st.error) {
+            errEl.textContent = st.error;
+            errEl.style.display = '';
+          } else {
+            renderCustomResult(st.result);
+            resEl.style.display = '';
+          }
+        }
+      } catch (_) { /* network hiccup, keep polling */ }
+
+      if (elapsed > 300) {  // 5-min timeout
+        clearInterval(_customBtPollTimer);
+        btn.disabled = false;
+        chip.style.display = 'none';
+        progEl.style.display = 'none';
+        errEl.textContent = 'Timed out after 5 minutes. Check server logs.';
+        errEl.style.display = '';
+      }
+    }, 2000);
+
+  } catch (e) {
+    btn.disabled = false;
+    chip.style.display = 'none';
+    progEl.style.display = 'none';
+    errEl.textContent = e.message || String(e);
+    errEl.style.display = '';
+  }
+}
+
+function renderCustomResult(r) {
+  const pnlColor = r.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  const wrColor  = r.win_rate  >= 50 ? 'var(--green)' : 'var(--red)';
+  const pfColor  = (r.profit_factor||0) >= 1.5 ? 'var(--green)' : (r.profit_factor||0) >= 1 ? 'var(--amber)' : 'var(--red)';
+  const shColor  = (r.sharpe_ratio||0) >= 1 ? 'var(--green)' : (r.sharpe_ratio||0) >= 0.5 ? 'var(--amber)' : 'var(--red)';
+
+  const cagrStr = r.cagr != null ? `<div class="bt-stat-row"><span>CAGR</span><span style="color:${r.cagr>=0?'var(--green)':'var(--red)'}">${r.cagr>=0?'+':''}${r.cagr?.toFixed(1)}%</span></div>` : '';
+
+  document.getElementById('btc-stats').innerHTML = `
+    <div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+      <div style="color:var(--cyan);font-size:11px;font-weight:600">${r.strategy || 'Custom Strategy'}</div>
+      <div style="color:var(--text-dim);font-size:10px;margin-top:2px">${r.instrument || ''} · ${r.start_date} → ${r.end_date} · <span style="color:var(--amber)">${r.config?.broker || 'groww'}</span></div>
+    </div>
+    <div class="bt-stat-row"><span>Trades</span><span>${r.total_trades} <span style="color:var(--green)">W:${r.wins}</span> <span style="color:var(--red)">L:${r.losses}</span></span></div>
+    <div class="bt-stat-row"><span>Win Rate</span><span style="color:${wrColor}">${r.win_rate?.toFixed(1)}%</span></div>
+    <div class="bt-stat-row"><span>Total P&amp;L</span><span style="color:${pnlColor};font-weight:600">&#8377;${Math.round(r.total_pnl||0).toLocaleString('en-IN')}</span></div>
+    <div class="bt-stat-row"><span>Profit Factor</span><span style="color:${pfColor}">${r.profit_factor?.toFixed(2)}</span></div>
+    <div class="bt-stat-row"><span>Sharpe</span><span style="color:${shColor}">${r.sharpe_ratio?.toFixed(2)}</span></div>
+    <div class="bt-stat-row"><span>Max Drawdown</span><span style="color:var(--red)">&#8377;${Math.round(r.max_drawdown||0).toLocaleString('en-IN')}</span></div>
+    ${cagrStr}
+  `;
+
+  // Mini equity sparkline from cumulative pnl per trade
+  const tradesPnl = (r.trades || []).map(t => t.pnl);
+  if (tradesPnl.length) {
+    let cum = 0;
+    const cumArr = tradesPnl.map(p => { cum += p; return cum; });
+    const minC = Math.min(...cumArr, 0);
+    const maxC = Math.max(...cumArr, 1);
+    const range = maxC - minC || 1;
+    const bars = cumArr.map(v => {
+      const pct = Math.max(2, Math.round(((v - minC) / range) * 100));
+      const col = v >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<span style="height:${pct}%;background:${col};opacity:0.7"></span>`;
+    }).join('');
+    document.getElementById('btc-equity').innerHTML = bars;
+    document.getElementById('btc-equity').title = `Equity curve: ${cumArr.length} trades`;
+  } else {
+    document.getElementById('btc-equity').innerHTML = '';
+  }
+
+  // Trades table
+  const trades = (r.trades || []).slice().reverse();
+  if (trades.length) {
+    const rows = trades.map(t => {
+      const pc = t.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+      const entryTime = (t.entry_time || '').split(' ').pop()?.slice(0,5) || '';
+      const exitTime  = (t.exit_time  || '').split(' ').pop()?.slice(0,5) || '';
+      return `<tr>
+        <td style="color:var(--text-dim);white-space:nowrap">${String(t.entry_time||'').split('T')[0] || ''}</td>
+        <td style="color:var(--text-dim)">${entryTime}</td>
+        <td>&#8377;${t.entry_price?.toFixed(2)}</td>
+        <td style="color:var(--text-dim)">${exitTime}</td>
+        <td>&#8377;${t.exit_price?.toFixed(2)}</td>
+        <td style="color:${pc};font-weight:600">&#8377;${Math.round(t.pnl).toLocaleString('en-IN')}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('btc-trades-table').innerHTML = `
+      <div style="font-size:10px;color:var(--text-dim);letter-spacing:1px;margin-bottom:4px">RECENT TRADES</div>
+      <div style="overflow-x:auto">
+      <table class="candle-table" style="min-width:420px">
+        <thead><tr>
+          <th style="text-align:left">DATE</th><th style="text-align:left">ENTRY</th>
+          <th>E.PRICE</th><th style="text-align:left">EXIT</th>
+          <th>X.PRICE</th><th>P&amp;L</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  } else {
+    document.getElementById('btc-trades-table').innerHTML = '<div style="color:var(--text-dim);font-size:10px;padding:8px 0">No trades recorded in this period.</div>';
   }
 }
 
