@@ -358,6 +358,151 @@ async def _run_backtest(req: BacktestRequest):
         _backtest_status["running"] = False
 
 
+# ── Bhav Engine: Custom Strategy Backtesting ────────────────────────────────
+
+class CustomBacktestRequest(BaseModel):
+    """Custom strategy backtest request via Bhav engine."""
+    strategy_code: str  # Python code defining `strategy = MyStrategy()`
+    start_date: str     # YYYY-MM-DD
+    end_date: str       # YYYY-MM-DD
+    underlying: str = "NSE_INDEX|Nifty 50"
+    capital: float = 500_000
+    lot_size: Optional[int] = None
+    warmup_days: int = 0
+    broker: str = "groww"  # groww, upstox, or csv
+    groww_token: Optional[str] = None
+    upstox_token: Optional[str] = None
+    csv_dir: Optional[str] = None
+
+    def validate(self):
+        """Validate request fields."""
+        import re
+        from datetime import datetime
+
+        if not self.strategy_code or len(self.strategy_code.strip()) < 10:
+            raise ValueError("strategy_code must not be empty")
+        if self.broker not in ("groww", "upstox", "csv"):
+            raise ValueError("broker must be 'groww', 'upstox', or 'csv'")
+        for field_name, date_str in (("start_date", self.start_date), ("end_date", self.end_date)):
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
+                raise ValueError(f"{field_name} must be YYYY-MM-DD")
+            try:
+                datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"{field_name} is not a valid date")
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be before end_date")
+
+
+_custom_backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
+
+
+@router.post("/backtest/custom")
+async def custom_backtest(req: CustomBacktestRequest, background_tasks: BackgroundTasks):
+    """Run custom strategy via Bhav engine with provider selection.
+
+    Request body:
+    {
+        "strategy_code": "from bhav.engine.strategy import Strategy, Context\nclass MyStrat(Strategy): ...",
+        "start_date": "2025-01-16",
+        "end_date": "2025-01-17",
+        "underlying": "NSE_INDEX|Nifty 50",
+        "capital": 500000,
+        "lot_size": 75,
+        "warmup_days": 0,
+        "broker": "groww"
+    }
+
+    Returns immediately with status "started". Poll GET /api/backtest/custom/status for results.
+    """
+    try:
+        req.validate()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    if _custom_backtest_status["running"]:
+        raise HTTPException(status_code=409, detail="Custom backtest already running")
+
+    background_tasks.add_task(_run_custom_backtest, req)
+    return {"status": "started", "strategy_name": "custom_user_strategy"}
+
+
+@router.get("/backtest/custom/status")
+async def custom_backtest_status():
+    """Poll for custom backtest progress and results."""
+    return _custom_backtest_status
+
+
+def _run_custom_backtest_sync(req: CustomBacktestRequest) -> dict:
+    """Synchronous backtest execution (runs in thread)."""
+    from backtest_orchestrator import run_backtest_async
+    from pathlib import Path
+
+    csv_dir = Path(req.csv_dir) if req.csv_dir else None
+    cache_dir = Path("cache")  # Use project cache dir
+
+    result = run_backtest_async(
+        strategy_code=req.strategy_code,
+        start=req.start_date,
+        end=req.end_date,
+        underlying=req.underlying,
+        capital=req.capital,
+        lot_size=req.lot_size,
+        warmup_days=req.warmup_days,
+        broker=req.broker,
+        groww_token=req.groww_token,
+        upstox_token=req.upstox_token,
+        csv_dir=csv_dir,
+        cache_dir=cache_dir,
+    )
+    return result
+
+
+async def _run_custom_backtest(req: CustomBacktestRequest):
+    """Run custom backtest in background and update status."""
+    _custom_backtest_status["running"] = True
+    _custom_backtest_status["error"] = None
+    _custom_backtest_status["result"] = None
+    _custom_backtest_status["progress"] = 0
+
+    try:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, _run_custom_backtest_sync, req)
+        _custom_backtest_status["result"] = result
+        _custom_backtest_status["progress"] = 100
+
+        # Optionally save to DB
+        try:
+            await db.save_backtest_run(
+                {
+                    "instrument": req.underlying,
+                    "broker": req.broker,
+                    "strategy": "custom_user_code",
+                    "start_date": req.start_date,
+                    "end_date": req.end_date,
+                },
+                {
+                    "total_trades": result["total_trades"],
+                    "wins": result["wins"],
+                    "losses": result["losses"],
+                    "win_rate": result["win_rate"],
+                    "total_pnl": result["total_pnl"],
+                    "profit_factor": result["profit_factor"],
+                    "sharpe_ratio": result["sharpe_ratio"],
+                    "max_drawdown": result["max_drawdown"],
+                },
+            )
+        except Exception as e:
+            print(f"[custom_backtest] Warning: could not save to DB: {e}")
+
+    except Exception as e:
+        import traceback
+        _custom_backtest_status["error"] = str(e)
+        print(f"[custom_backtest] ERROR: {e}\n{traceback.format_exc()}")
+    finally:
+        _custom_backtest_status["running"] = False
+
+
 @router.post("/tick")
 async def manual_tick(request: Request):
     """Manually trigger one market loop tick (for testing)."""
