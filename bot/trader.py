@@ -630,6 +630,9 @@ class LiveTrader:
                     "entry_reason":  decision.get("reasoning", ""),
                     "capital_used":  trade_cost,
                     "capital_before": round(store.capital_available, 2),
+                    "sl_premium":    sl,
+                    "target_premium": target,
+                    "risk_reward":   decision.get("risk_reward"),
                 })
                 position["trade_db_id"] = trade_db_id
                 position["entry_log"] = log.to_dict()
@@ -678,6 +681,9 @@ class LiveTrader:
                         "entry_reason":   decision.get("reasoning", ""),
                         "capital_used":   position["entry"] * quantity,
                         "capital_before": round(store.capital_available, 2),
+                        "sl_premium":     sl,
+                        "target_premium": target,
+                        "risk_reward":    decision.get("risk_reward"),
                     })
                     position["trade_db_id"] = trade_db_id
                     store.add_position(position)
@@ -757,6 +763,33 @@ class LiveTrader:
         print(f"[trader] EXIT {position['instrument']} {position['strike']}{position['type']} "
               f"@ {exit_fill:.2f} (quoted {exit_quote:.2f}) | raw=Rs{pnl_raw:.0f} "
               f"fees=Rs{fees_total:.0f} slip=Rs{slippage_cost:.0f} net=Rs{pnl_final:.0f} [{reason}]")
+
+        # Fire AI trade coach asynchronously — non-blocking
+        if trade_db_id:
+            asyncio.create_task(self._run_trade_coach(trade_db_id, position, reason, exit_fill, pnl_final))
+
+    async def _run_trade_coach(self, trade_db_id: int, position: dict, exit_reason: str,
+                               exit_price: float, pnl_final: float):
+        """Run AI post-trade coaching analysis and save to DB."""
+        try:
+            # Fetch full trade record from DB
+            trade = await db.get_trade(trade_db_id)
+            if not trade:
+                return
+            # Fetch signal for context (factor_scores, ai_response etc.)
+            signal = None
+            if trade.get("signal_id"):
+                signal = await db.get_signal(trade["signal_id"])
+
+            analysis = await self._agent.analyze_trade(trade, signal)
+            if analysis and analysis.get("verdict") != "PARSE_ERROR":
+                await db.insert_trade_analysis(trade_db_id, analysis)
+                verdict = analysis.get("verdict", "")
+                score   = analysis.get("execution_score", "?")
+                print(f"[coach] {position['instrument']} {position['strike']}{position['type']} | "
+                      f"verdict={verdict} exec={score}/10 | {analysis.get('lesson','')[:60]}")
+        except Exception as e:
+            print(f"[coach] analysis failed for trade {trade_db_id}: {e}")
 
     async def sl_monitor_loop(self):
         """

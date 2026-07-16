@@ -129,7 +129,15 @@ Return JSON:
   "reasoning": "<max 80 words>",
   "sl_premium": <float — your chosen stop-loss premium level, below entry>,
   "target_premium": <float — your chosen target premium level, above entry>,
-  "risk_reward": <float — target_distance / sl_distance>
+  "risk_reward": <float — target_distance / sl_distance>,
+  "factor_scores": {{
+    "trend": <-2 to +2>,
+    "momentum": <-2 to +2>,
+    "structure": <-2 to +2>,
+    "options_oi": <-2 to +2>,
+    "vix_iv": <-2 to +2>,
+    "time_context": <-2 to +2>
+  }}
 }}
 """
 
@@ -160,6 +168,51 @@ Return JSON:
   "action": "HOLD" | "MOVE_SL" | "EXIT",
   "new_sl": <float — required if MOVE_SL, must be > current SL and < current price>,
   "reason": "<one sentence>"
+}}
+"""
+
+TRADE_COACH_SYSTEM = """
+You are Ragi's post-trade coaching AI. A trade just closed. Be honest and precise.
+Analyze the entry, exit, and whether it should have been taken at all.
+Return ONLY valid JSON — no markdown, no text outside JSON.
+"""
+
+TRADE_COACH_USER = """
+=== CLOSED TRADE ===
+Instrument  : {instrument} {strike}{option_type}
+Action      : {action}
+Entry       : ₹{entry_price} at {entry_time} IST
+Exit        : ₹{exit_price} at {exit_time} IST
+Exit Reason : {exit_reason}
+SL set      : ₹{sl}   |  Target set: ₹{target}
+P&L (net)   : ₹{pnl_final}
+Confidence  : {confidence}/10
+
+Entry rationale: {entry_reason}
+
+=== MARKET AT ENTRY ===
+Trend read    : {trend_read}
+Entry trigger : {entry_trigger}
+Premarket bias: {premarket_bias}
+India VIX     : {india_vix}
+PCR           : {pcr}
+
+=== FACTOR SCORES AT ENTRY (if available) ===
+{factor_scores_str}
+
+Analyze this trade honestly and return JSON:
+{{
+  "verdict": "VALID_TRADE" | "PREMATURE_ENTRY" | "LATE_ENTRY" | "AGAINST_TREND" | "OVERCONFIDENT" | "GOOD_SETUP_BAD_EXIT" | "AVOIDED_WELL",
+  "execution_score": <1-10>,
+  "setup_score": <1-10>,
+  "risk_score": <1-10>,
+  "exit_quality": "OPTIMAL" | "EARLY_EXIT" | "HELD_TOO_LONG" | "AT_SL" | "AT_TARGET" | "EOD_FORCED",
+  "timing_grade": "Early ⭐⭐" | "Ideal ⭐⭐⭐⭐⭐" | "Good ⭐⭐⭐⭐" | "Late ⭐⭐⭐",
+  "optimal_exit_premium": <float — what the ideal exit price would have been, or null>,
+  "mistake": "<one specific mistake, or null if trade was well executed>",
+  "lesson": "<one actionable lesson for next time>",
+  "could_have_been_avoided": <true|false>,
+  "ev_estimate": <float — expected value in R-multiples based on this setup type, e.g. 0.3 or -0.2>
 }}
 """
 

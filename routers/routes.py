@@ -274,6 +274,15 @@ async def trades(days: int = 30):
         return []
 
 
+@router.get("/trades/{trade_id}/analysis")
+async def get_trade_analysis(trade_id: int):
+    """Return AI coach analysis for a specific trade."""
+    try:
+        return await db.get_trade_analysis(trade_id) or {}
+    except Exception as e:
+        return {}
+
+
 @router.get("/rules")
 async def rules():
     try:

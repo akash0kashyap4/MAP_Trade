@@ -56,6 +56,24 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     total_trades INTEGER, win_rate REAL,
     profit_factor REAL, max_drawdown REAL, sharpe REAL
 );
+CREATE TABLE IF NOT EXISTS trade_analysis (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id INTEGER NOT NULL,
+    analyzed_at TEXT NOT NULL,
+    verdict TEXT,
+    execution_score INTEGER,
+    setup_score INTEGER,
+    risk_score INTEGER,
+    exit_quality TEXT,
+    timing_grade TEXT,
+    optimal_exit_premium REAL,
+    mistake TEXT,
+    lesson TEXT,
+    could_have_been_avoided INTEGER DEFAULT 0,
+    ev_estimate REAL,
+    factor_scores TEXT,
+    raw_json TEXT
+);
 CREATE TABLE IF NOT EXISTS ai_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT NOT NULL,
@@ -96,6 +114,24 @@ CREATE TABLE IF NOT EXISTS learning_rules (
 CREATE TABLE IF NOT EXISTS backtest_runs (
     id SERIAL PRIMARY KEY, run_at TEXT NOT NULL, config TEXT, stats TEXT,
     total_trades INTEGER, win_rate REAL, profit_factor REAL, max_drawdown REAL, sharpe REAL
+);
+CREATE TABLE IF NOT EXISTS trade_analysis (
+    id SERIAL PRIMARY KEY,
+    trade_id INTEGER NOT NULL,
+    analyzed_at TEXT NOT NULL,
+    verdict TEXT,
+    execution_score INTEGER,
+    setup_score INTEGER,
+    risk_score INTEGER,
+    exit_quality TEXT,
+    timing_grade TEXT,
+    optimal_exit_premium REAL,
+    mistake TEXT,
+    lesson TEXT,
+    could_have_been_avoided INTEGER DEFAULT 0,
+    ev_estimate REAL,
+    factor_scores TEXT,
+    raw_json TEXT
 );
 CREATE TABLE IF NOT EXISTS ai_requests (
     id SERIAL PRIMARY KEY,
@@ -153,6 +189,16 @@ async def init_db():
                             await db.execute("ALTER TABLE signals ADD COLUMN signal_quality TEXT")
                 except Exception as e:
                     print(f"[DB] SQLite migration error (signal_quality): {e}")
+
+                # Dynamic migration — sl/target/rr columns on trades
+                try:
+                    async with db.execute("PRAGMA table_info(trades)") as cur:
+                        tcols = [row[1] for row in await cur.fetchall()]
+                        for col in ("sl_premium", "target_premium", "risk_reward"):
+                            if col not in tcols:
+                                await db.execute(f"ALTER TABLE trades ADD COLUMN {col} REAL")
+                except Exception as e:
+                    print(f"[DB] SQLite migration error (trades sl/rr): {e}")
 
                 # Create indexes for analytics performance
                 try:
@@ -300,6 +346,7 @@ async def insert_trade(trade: dict) -> int:
         trade.get("exit_reason"), trade.get("quantity"), trade.get("pnl_raw"),
         trade.get("pnl_final"), trade.get("signal_id"), trade.get("confidence"),
         trade.get("entry_reason"), trade.get("capital_used"), trade.get("capital_before"),
+        trade.get("sl_premium"), trade.get("target_premium"), trade.get("risk_reward"),
     )
     if _USE_SQLITE:
         try:
@@ -307,7 +354,8 @@ async def insert_trade(trade: dict) -> int:
                 cur = await db.execute(
                     "INSERT INTO trades (trade_type,instrument,action,strike,expiry,entry_time,entry_price,"
                     "exit_time,exit_price,exit_reason,quantity,pnl_raw,pnl_final,signal_id,confidence,"
-                    "entry_reason,capital_used,capital_before) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "entry_reason,capital_used,capital_before,sl_premium,target_premium,risk_reward) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     vals
                 )
                 await db.commit()
@@ -322,8 +370,8 @@ async def insert_trade(trade: dict) -> int:
                 row = await db.fetchrow(
                     "INSERT INTO trades (trade_type,instrument,action,strike,expiry,entry_time,entry_price,"
                     "exit_time,exit_price,exit_reason,quantity,pnl_raw,pnl_final,signal_id,confidence,"
-                    "entry_reason,capital_used,capital_before) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,"
-                    "$13,$14,$15,$16,$17,$18) RETURNING id",
+                    "entry_reason,capital_used,capital_before,sl_premium,target_premium,risk_reward) "
+                    "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING id",
                     *vals
                 )
                 return row["id"]
@@ -615,6 +663,100 @@ async def get_trade(trade_id: int) -> dict | None:
         except Exception as e:
             log.warning("[get_trade] PG error: %s", e)
             return None
+
+
+# ── trade_analysis ───────────────────────────────────────────────────────────
+
+async def insert_trade_analysis(trade_id: int, analysis: dict) -> int:
+    factor_scores_json = json.dumps(analysis.get("factor_scores") or {})
+    raw_json = json.dumps(analysis)
+    vals = (
+        trade_id, _now_ist(),
+        analysis.get("verdict"),
+        analysis.get("execution_score"),
+        analysis.get("setup_score"),
+        analysis.get("risk_score"),
+        analysis.get("exit_quality"),
+        analysis.get("timing_grade"),
+        analysis.get("optimal_exit_premium"),
+        analysis.get("mistake"),
+        analysis.get("lesson"),
+        1 if analysis.get("could_have_been_avoided") else 0,
+        analysis.get("ev_estimate"),
+        factor_scores_json,
+        raw_json,
+    )
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                cur = await db.execute(
+                    "INSERT INTO trade_analysis (trade_id,analyzed_at,verdict,execution_score,setup_score,"
+                    "risk_score,exit_quality,timing_grade,optimal_exit_premium,mistake,lesson,"
+                    "could_have_been_avoided,ev_estimate,factor_scores,raw_json) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    vals
+                )
+                await db.commit()
+                return cur.lastrowid or 0
+        except Exception as e:
+            log.warning("[insert_trade_analysis] SQLite error: %s", e)
+            return 0
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                row = await db.fetchrow(
+                    "INSERT INTO trade_analysis (trade_id,analyzed_at,verdict,execution_score,setup_score,"
+                    "risk_score,exit_quality,timing_grade,optimal_exit_premium,mistake,lesson,"
+                    "could_have_been_avoided,ev_estimate,factor_scores,raw_json) "
+                    "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id",
+                    *vals
+                )
+                return row["id"] if row else 0
+        except Exception as e:
+            log.warning("[insert_trade_analysis] PG error: %s", e)
+            return 0
+
+
+async def get_trade_analysis(trade_id: int) -> dict | None:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                async with db.execute(
+                    "SELECT * FROM trade_analysis WHERE trade_id=? ORDER BY analyzed_at DESC LIMIT 1",
+                    (trade_id,)
+                ) as cur:
+                    row = await cur.fetchone()
+                    if row:
+                        if row.get("factor_scores"):
+                            try:
+                                row["factor_scores"] = json.loads(row["factor_scores"])
+                            except Exception:
+                                pass
+                        return row
+        except Exception as e:
+            log.debug("[get_trade_analysis] SQLite error: %s", e)
+        return None
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                row = await db.fetchrow(
+                    "SELECT * FROM trade_analysis WHERE trade_id=$1 ORDER BY analyzed_at DESC LIMIT 1",
+                    trade_id
+                )
+                if row:
+                    d = dict(row)
+                    if d.get("factor_scores"):
+                        try:
+                            d["factor_scores"] = json.loads(d["factor_scores"])
+                        except Exception:
+                            pass
+                    return d
+        except Exception as e:
+            log.debug("[get_trade_analysis] PG error: %s", e)
+        return None
 
 
 # ── ai_requests ───────────────────────────────────────────────────────────────

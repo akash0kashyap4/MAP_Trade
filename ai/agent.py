@@ -18,6 +18,7 @@ from ai.prompts import (
     DECISION_SYSTEM, DECISION_USER,
     TRAILING_SL_SYSTEM, TRAILING_SL_USER,
     NIGHTLY_REVIEW_SYSTEM, NIGHTLY_REVIEW_USER,
+    TRADE_COACH_SYSTEM, TRADE_COACH_USER,
 )
 from ai.schema import validate_decision, validate_premarket, validate_trailing_sl
 
@@ -338,6 +339,58 @@ class TradingAgent:
         except Exception as e:
             print(f"[agent] nightly_review parse error: {e}")
             return {"key_insight": raw[:300]}
+
+    async def analyze_trade(self, trade: dict, signal: dict | None = None) -> dict:
+        """Post-trade AI coaching — called after every position closes."""
+        ai_resp = {}
+        if signal and signal.get("ai_response"):
+            try:
+                ai_resp = json.loads(signal["ai_response"]) if isinstance(signal["ai_response"], str) else signal["ai_response"]
+            except Exception:
+                pass
+
+        factor_scores = ai_resp.get("factor_scores") or {}
+        factor_scores_str = "\n".join(
+            f"  {k}: {v:+d}" for k, v in factor_scores.items()
+        ) if factor_scores else "  (not available)"
+
+        entry_time_str = (trade.get("entry_time") or "")[:16]
+        exit_time_str  = (trade.get("exit_time")  or "")[:16]
+        option_type    = "CE" if "CE" in (trade.get("action") or "") else "PE"
+        sl             = trade.get("sl_premium") or ai_resp.get("sl_premium") or "N/A"
+        target         = trade.get("target_premium") or ai_resp.get("target_premium") or "N/A"
+
+        user_msg = TRADE_COACH_USER.format(
+            instrument=trade.get("instrument", "NIFTY"),
+            strike=trade.get("strike", ""),
+            option_type=option_type,
+            action=trade.get("action", ""),
+            entry_price=trade.get("entry_price", 0),
+            entry_time=entry_time_str,
+            exit_price=trade.get("exit_price", 0),
+            exit_time=exit_time_str,
+            exit_reason=trade.get("exit_reason", ""),
+            sl=sl,
+            target=target,
+            pnl_final=trade.get("pnl_final", 0),
+            confidence=trade.get("confidence", "N/A"),
+            entry_reason=trade.get("entry_reason") or ai_resp.get("reasoning") or "N/A",
+            trend_read=ai_resp.get("trend_read", "N/A"),
+            entry_trigger=ai_resp.get("entry_trigger", "N/A"),
+            premarket_bias=signal.get("premarket_bias", "N/A") if signal else "N/A",
+            india_vix="N/A",
+            pcr="N/A",
+            factor_scores_str=factor_scores_str,
+        )
+
+        raw = await self._ask(TRADE_COACH_SYSTEM, user_msg)
+        try:
+            result = _extract_json(raw)
+            result["factor_scores"] = factor_scores  # carry forward from entry
+            return result
+        except Exception as e:
+            print(f"[agent] analyze_trade parse error: {e}")
+            return {"verdict": "PARSE_ERROR", "mistake": raw[:200]}
 
     def decide_trade_sync(self, market_context: dict) -> dict:
         """Synchronous version for backtest — calls _ask_claude directly, no asyncio."""

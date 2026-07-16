@@ -752,24 +752,22 @@
 
         <!-- SECTION: Trade Log -->
         <div id="sec-trades" class="nav-section-panel" style="display:none">
-        <!-- Today's Trades from DB -->
         <div class="section-label" style="margin-bottom:6px">TODAY'S TRADES</div>
-        <table class="pos-table" id="today-trades-table">
-          <thead>
-            <tr>
-              <th style="text-align:left">INSTRUMENT</th>
-              <th>TIME</th><th>ENTRY</th><th>EXIT</th><th>CONF</th><th>P&amp;L</th><th>EXIT REASON</th>
-            </tr>
-          </thead>
-          <tbody id="today-trades-tbody">
-            <tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:8px">loading…</td></tr>
-          </tbody>
-        </table>
+        <div id="today-trades-list">
+          <div style="color:var(--text-dim);font-size:11px;padding:8px 0">loading…</div>
+        </div>
         <div style="margin-top:4px;font-size:10px;color:var(--text-dim);display:flex;justify-content:space-between">
           <span>Closed: <span id="today-closed-count" style="color:var(--text)">0</span> &nbsp; W:<span id="today-wins" style="color:var(--green)">0</span> L:<span id="today-losses" style="color:var(--red)">0</span></span>
           <span>Realized: <span id="today-realized-db" style="color:var(--cyan)">₹0</span></span>
         </div>
-
+        <!-- AI coach analysis drawer -->
+        <div id="trade-coach-drawer" style="display:none;margin-top:12px;border:1px solid var(--border);border-radius:4px;padding:12px;background:var(--bg2)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:11px;color:var(--cyan);letter-spacing:1px">AI TRADE COACH</span>
+            <button onclick="document.getElementById('trade-coach-drawer').style.display='none'" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px">✕</button>
+          </div>
+          <div id="trade-coach-content"></div>
+        </div>
         <div class="divider"></div>
         </div><!-- /sec-trades -->
 
@@ -1484,49 +1482,147 @@ function addTradeLog(entry) {
 }
 
 // ── TODAY'S TRADES FROM DB ──
+function _timingGrade(entryTimeStr) {
+  if (!entryTimeStr) return '';
+  const t = entryTimeStr.substring(11, 16);
+  const [h, m] = t.split(':').map(Number);
+  const mins = h * 60 + m;
+  if (mins >= 9*60+15 && mins <= 9*60+30) return 'Early ⭐⭐';
+  if (mins > 9*60+30 && mins <= 10*60+30) return 'Ideal ⭐⭐⭐⭐⭐';
+  if (mins > 10*60+30 && mins <= 13*60)   return 'Good ⭐⭐⭐⭐';
+  if (mins > 13*60 && mins <= 14*60+30)   return 'Late ⭐⭐⭐';
+  return 'Very Late ⭐';
+}
+
+function _factorBars(factors) {
+  if (!factors || !Object.keys(factors).length) return '';
+  const labels = {trend:'Trend', momentum:'Momentum', structure:'Structure',
+                  options_oi:'OI', vix_iv:'VIX/IV', time_context:'Timing'};
+  return Object.entries(factors).map(([k, v]) => {
+    const pct = Math.round((v + 2) / 4 * 100);
+    const col = v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-dim)';
+    return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+      <span style="width:70px;font-size:9px;color:var(--text-dim)">${labels[k]||k}</span>
+      <div style="flex:1;background:var(--bg3);border-radius:2px;height:6px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${col};transition:width 0.3s"></div>
+      </div>
+      <span style="width:22px;font-size:9px;color:${col};text-align:right">${v>0?'+':''}${v}</span>
+    </div>`;
+  }).join('');
+}
+
+async function showTradeCoach(tradeId) {
+  const drawer  = document.getElementById('trade-coach-drawer');
+  const content = document.getElementById('trade-coach-content');
+  drawer.style.display = 'block';
+  content.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Loading AI analysis…</div>';
+  try {
+    const d = await (await fetch(`/api/trades/${tradeId}/analysis`)).json();
+    if (!d || !d.verdict) {
+      content.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Analysis not yet available (runs after trade closes).</div>';
+      return;
+    }
+    const verdictColor = {
+      VALID_TRADE:'var(--green)', GOOD_SETUP_BAD_EXIT:'var(--cyan)',
+      PREMATURE_ENTRY:'var(--amber)', LATE_ENTRY:'var(--amber)',
+      AGAINST_TREND:'var(--red)', OVERCONFIDENT:'var(--red)',
+    }[d.verdict] || 'var(--text-dim)';
+    const exitQualityColor = {
+      OPTIMAL:'var(--green)', AT_TARGET:'var(--green)',
+      EARLY_EXIT:'var(--amber)', HELD_TOO_LONG:'var(--amber)',
+      AT_SL:'var(--red)', EOD_FORCED:'var(--text-dim)',
+    }[d.exit_quality] || 'var(--text-dim)';
+
+    const scoreRow = (label, val) => val != null ? `
+      <div style="display:flex;justify-content:space-between;padding:2px 0;font-size:10px">
+        <span style="color:var(--text-dim)">${label}</span>
+        <span style="color:${val>=7?'var(--green)':val>=5?'var(--cyan)':'var(--red)'}">${val}/10</span>
+      </div>` : '';
+
+    content.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="color:${verdictColor};font-size:11px;font-weight:700;border:1px solid currentColor;border-radius:3px;padding:2px 8px">${d.verdict?.replace(/_/g,' ')}</span>
+        ${d.timing_grade ? `<span style="font-size:10px;color:var(--text-dim)">${d.timing_grade}</span>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+        ${scoreRow('Execution', d.execution_score)}
+        ${scoreRow('Setup Quality', d.setup_score)}
+        ${scoreRow('Risk Mgmt', d.risk_score)}
+        ${d.exit_quality ? `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:10px"><span style="color:var(--text-dim)">Exit Quality</span><span style="color:${exitQualityColor}">${d.exit_quality?.replace(/_/g,' ')}</span></div>` : ''}
+        ${d.ev_estimate != null ? `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:10px"><span style="color:var(--text-dim)">EV (R-mult)</span><span style="color:${d.ev_estimate>=0?'var(--green)':'var(--red)'}">${d.ev_estimate>=0?'+':''}${d.ev_estimate?.toFixed(2)}</span></div>` : ''}
+        ${d.optimal_exit_premium ? `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:10px"><span style="color:var(--text-dim)">Optimal Exit</span><span style="color:var(--cyan)">₹${d.optimal_exit_premium}</span></div>` : ''}
+      </div>
+      ${d.factor_scores && Object.keys(d.factor_scores).length ? `
+        <div style="font-size:9px;color:var(--text-dim);letter-spacing:1px;margin-bottom:4px">FACTOR SCORES</div>
+        ${_factorBars(d.factor_scores)}
+        <div style="margin-top:6px"></div>
+      ` : ''}
+      ${d.mistake ? `<div style="background:rgba(239,68,68,0.08);border-left:2px solid var(--red);padding:6px 8px;border-radius:0 3px 3px 0;margin-bottom:6px;font-size:10px;color:var(--red)">⚠ ${d.mistake}</div>` : ''}
+      ${d.lesson ? `<div style="background:rgba(0,212,255,0.06);border-left:2px solid var(--cyan);padding:6px 8px;border-radius:0 3px 3px 0;font-size:10px;color:var(--cyan)">💡 ${d.lesson}</div>` : ''}
+    `;
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--red);font-size:11px">Error: ${e}</div>`;
+  }
+}
+
 async function loadTodayTrades() {
   try {
     const raw = await (await fetch('/api/trades/today')).json();
     const trades = Array.isArray(raw) ? raw : (raw.trades || []);
-    const tbody = document.getElementById('today-trades-tbody');
+    const list = document.getElementById('today-trades-list');
 
     if (raw.error) console.warn('[trades/today] DB error:', raw.error);
     if (!trades || !trades.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text-dim);text-align:center;padding:8px">no trades today</td></tr>';
+      list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:8px 0">no trades today</div>';
       return;
     }
 
     let wins = 0, losses = 0, realized = 0;
-    tbody.innerHTML = trades.map(t => {
+    list.innerHTML = trades.map(t => {
       const isOpen    = !t.exit_time;
       const pnl       = t.pnl_final ?? null;
       const pnlColor  = pnl === null ? 'var(--text-dim)' : pnl >= 0 ? 'var(--green)' : 'var(--red)';
-      const pnlStr    = pnl === null ? '──' : `₹${Math.round(pnl).toLocaleString('en-IN')}`;
-      const exitStr   = t.exit_price != null ? `₹${t.exit_price.toFixed(2)}` : '──';
+      const pnlStr    = pnl === null ? '──' : `${pnl >= 0 ? '+' : ''}₹${Math.round(pnl).toLocaleString('en-IN')}`;
       const entryTime = t.entry_time ? t.entry_time.substring(11,16) : '──';
       const conf      = t.confidence != null ? t.confidence : '──';
       const confColor = conf >= 8 ? 'var(--green)' : conf >= 6 ? 'var(--cyan)' : 'var(--amber)';
-      const exitReason = isOpen
-        ? '<span style="color:var(--cyan)">OPEN</span>'
-        : (t.exit_reason || '──');
-      const entryReasonHtml = t.entry_reason
-        ? `<div style="font-size:9px;color:var(--text-dim);margin-top:3px;line-height:1.4;white-space:normal">${t.entry_reason}</div>`
-        : '';
-      if (!isOpen && pnl !== null) {
-        realized += pnl;
-        if (pnl > 0) wins++; else losses++;
-      }
-      const actColor = t.action === 'BUY_CE' ? 'var(--green)' : t.action === 'BUY_PE' ? 'var(--red)' : 'var(--text-dim)';
       const optSuffix = t.action?.includes('CE') ? 'CE' : t.action?.includes('PE') ? 'PE' : '';
-      return `<tr>
-        <td style="color:${actColor};max-width:220px">${t.instrument} ${t.strike||''}${optSuffix}${entryReasonHtml}</td>
-        <td style="color:var(--text-dim)">${entryTime}</td>
-        <td>₹${(t.entry_price||0).toFixed(2)}</td>
-        <td>${exitStr}</td>
-        <td style="color:${confColor};font-weight:600">${conf}</td>
-        <td style="color:${pnlColor};font-weight:600">${pnlStr}</td>
-        <td>${exitReason}</td>
-      </tr>`;
+      const actColor  = t.action === 'BUY_CE' ? 'var(--green)' : 'var(--red)';
+      const timingGrade = isOpen ? '' : _timingGrade(t.entry_time);
+      const rrStr     = t.risk_reward ? `${t.risk_reward.toFixed(1)}R` : '';
+      const slStr     = t.sl_premium  ? `₹${t.sl_premium.toFixed(0)}` : '──';
+      const tgtStr    = t.target_premium ? `₹${t.target_premium.toFixed(0)}` : '──';
+      const exitReason = isOpen ? '<span style="color:var(--cyan);font-size:9px">OPEN</span>' : `<span style="font-size:9px">${t.exit_reason||'──'}</span>`;
+      if (!isOpen && pnl !== null) { realized += pnl; if (pnl > 0) wins++; else losses++; }
+      return `
+      <div style="border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--bg2)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <span style="color:${actColor};font-size:11px;font-weight:700">${t.instrument} ${t.strike||''}${optSuffix}</span>
+            <span style="color:var(--text-dim);font-size:9px;margin-left:8px">${entryTime}</span>
+            ${timingGrade ? `<span style="color:var(--text-dim);font-size:9px;margin-left:4px">· ${timingGrade}</span>` : ''}
+          </div>
+          <span style="color:${pnlColor};font-weight:700;font-size:12px">${pnlStr}</span>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:6px;align-items:center">
+          <div style="font-size:9px;color:var(--text-dim)">ENTRY <span style="color:var(--text)">₹${(t.entry_price||0).toFixed(2)}</span></div>
+          <div style="font-size:9px;color:var(--text-dim)">EXIT <span style="color:var(--text)">${t.exit_price ? `₹${t.exit_price.toFixed(2)}` : '──'}</span></div>
+          <div style="font-size:9px;color:var(--text-dim)">SL <span style="color:var(--red)">${slStr}</span></div>
+          <div style="font-size:9px;color:var(--text-dim)">TGT <span style="color:var(--green)">${tgtStr}</span></div>
+          ${rrStr ? `<div style="font-size:9px;color:var(--text-dim)">RR <span style="color:var(--cyan)">${rrStr}</span></div>` : ''}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:9px">
+              <span style="color:var(--text-dim)">CONF </span>
+              <span style="color:${confColor};font-weight:700">${conf}/10</span>
+            </div>
+            ${exitReason}
+          </div>
+          ${!isOpen ? `<button onclick="showTradeCoach(${t.id})" style="font-size:9px;background:transparent;color:var(--purple);border:1px solid var(--purple);border-radius:3px;padding:2px 8px;cursor:pointer">🤖 AI Coach</button>` : ''}
+        </div>
+        ${t.entry_reason ? `<div style="font-size:9px;color:var(--text-dim);margin-top:4px;line-height:1.4;border-top:1px solid var(--border);padding-top:4px">${t.entry_reason.substring(0,120)}${t.entry_reason.length>120?'…':''}</div>` : ''}
+      </div>`;
     }).join('');
 
     document.getElementById('today-closed-count').textContent = wins + losses;
