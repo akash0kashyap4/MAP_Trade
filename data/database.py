@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS backtest_runs (
     total_trades INTEGER, win_rate REAL,
     profit_factor REAL, max_drawdown REAL, sharpe REAL
 );
+CREATE TABLE IF NOT EXISTS ai_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'MEDIUM',
+    resolved INTEGER DEFAULT 0,
+    resolved_at TEXT,
+    feature_key TEXT
+);
 """
 
 # ── Postgres DDL ($N params, SERIAL) ─────────────────────────────────────────
@@ -86,6 +96,16 @@ CREATE TABLE IF NOT EXISTS learning_rules (
 CREATE TABLE IF NOT EXISTS backtest_runs (
     id SERIAL PRIMARY KEY, run_at TEXT NOT NULL, config TEXT, stats TEXT,
     total_trades INTEGER, win_rate REAL, profit_factor REAL, max_drawdown REAL, sharpe REAL
+);
+CREATE TABLE IF NOT EXISTS ai_requests (
+    id SERIAL PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'MEDIUM',
+    resolved INTEGER DEFAULT 0,
+    resolved_at TEXT,
+    feature_key TEXT
 );
 """
 
@@ -596,3 +616,126 @@ async def get_trade(trade_id: int) -> dict | None:
             log.warning("[get_trade] PG error: %s", e)
             return None
 
+
+# ── ai_requests ───────────────────────────────────────────────────────────────
+
+async def save_ai_request(title: str, description: str, priority: str = "MEDIUM",
+                          feature_key: str | None = None) -> int:
+    """Insert a new AI feature request if not already present (by title)."""
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                # Skip duplicates
+                async with db.execute("SELECT id FROM ai_requests WHERE title=? AND resolved=0", (title,)) as cur:
+                    if await cur.fetchone():
+                        return 0
+                cur = await db.execute(
+                    "INSERT INTO ai_requests (created_at,title,description,priority,resolved,feature_key) "
+                    "VALUES (?,?,?,?,0,?)",
+                    (_now_ist(), title, description, priority, feature_key)
+                )
+                await db.commit()
+                return cur.lastrowid or 0
+        except Exception as e:
+            log.warning("[save_ai_request] SQLite error: %s", e)
+            return 0
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                existing = await db.fetchrow(
+                    "SELECT id FROM ai_requests WHERE title=$1 AND resolved=0", title
+                )
+                if existing:
+                    return 0
+                row = await db.fetchrow(
+                    "INSERT INTO ai_requests (created_at,title,description,priority,resolved,feature_key) "
+                    "VALUES ($1,$2,$3,$4,0,$5) RETURNING id",
+                    _now_ist(), title, description, priority, feature_key
+                )
+                return row["id"] if row else 0
+        except Exception as e:
+            log.warning("[save_ai_request] PG error: %s", e)
+            return 0
+
+
+async def get_ai_requests(include_resolved: bool = False) -> list:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                db.row_factory = _sqlite_dict_factory
+                where = "" if include_resolved else "WHERE resolved=0"
+                async with db.execute(
+                    f"SELECT * FROM ai_requests {where} ORDER BY created_at DESC"
+                ) as cur:
+                    return list(await cur.fetchall())
+        except Exception as e:
+            log.warning("[get_ai_requests] SQLite error: %s", e)
+            return []
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                where = "" if include_resolved else "WHERE resolved=0"
+                rows = await db.fetch(
+                    f"SELECT * FROM ai_requests {where} ORDER BY created_at DESC"
+                )
+                return [dict(r) for r in rows]
+        except Exception as e:
+            log.warning("[get_ai_requests] PG error: %s", e)
+            return []
+
+
+async def resolve_ai_request(request_id: int) -> bool:
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                await db.execute(
+                    "UPDATE ai_requests SET resolved=1,resolved_at=? WHERE id=?",
+                    (_now_ist(), request_id)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            log.warning("[resolve_ai_request] SQLite error: %s", e)
+            return False
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                await db.execute(
+                    "UPDATE ai_requests SET resolved=1,resolved_at=$1 WHERE id=$2",
+                    _now_ist(), request_id
+                )
+                return True
+        except Exception as e:
+            log.warning("[resolve_ai_request] PG error: %s", e)
+            return False
+
+
+async def resolve_ai_requests_by_key(feature_key: str) -> int:
+    """Auto-resolve all open requests matching a feature_key."""
+    if _USE_SQLITE:
+        try:
+            async with await _sqlite_conn() as db:
+                await db.execute(
+                    "UPDATE ai_requests SET resolved=1,resolved_at=? WHERE feature_key=? AND resolved=0",
+                    (_now_ist(), feature_key)
+                )
+                await db.commit()
+                return db.total_changes
+        except Exception as e:
+            log.warning("[resolve_by_key] SQLite error: %s", e)
+            return 0
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                result = await db.execute(
+                    "UPDATE ai_requests SET resolved=1,resolved_at=$1 WHERE feature_key=$2 AND resolved=0",
+                    _now_ist(), feature_key
+                )
+                return int(result.split()[-1]) if result else 0
+        except Exception as e:
+            log.warning("[resolve_by_key] PG error: %s", e)
+            return 0

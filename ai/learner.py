@@ -6,7 +6,8 @@ if TYPE_CHECKING:
     pass
 
 
-async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: dict, notify_fn=None):
+async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: dict, notify_fn=None,
+                            db_save_ai_request=None):
     trades = await db_get_trades(days=30, completed_only=True)
     if len(trades) < 5:
         print(f"[learner] Not enough trades for nightly review (have {len(trades)}, need 5+).")
@@ -16,6 +17,17 @@ async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: d
     stats  = _calculate_stats(trades)
 
     await db_save_rules(rules, stats)
+
+    # Save any new feature requests Claude generated
+    if db_save_ai_request:
+        for req in rules.get("feature_requests") or []:
+            if req.get("title"):
+                await db_save_ai_request(
+                    title=req["title"],
+                    description=req.get("description", ""),
+                    priority=req.get("priority", "MEDIUM"),
+                    feature_key=req.get("feature_key"),
+                )
 
     # Push freshly learned rules back into the agent immediately
     agent.update_learned_rules(rules)
@@ -88,6 +100,7 @@ class Learner:
             self._db.save_learning_rules,
             self._trading_cfg,
             notify_fn,
+            db_save_ai_request=getattr(self._db, "save_ai_request", None),
         )
 
     async def weekly_review(self, notify_fn=None):

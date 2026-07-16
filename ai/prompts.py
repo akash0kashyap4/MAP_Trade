@@ -201,6 +201,9 @@ Focus on Indian-specific patterns:
   "avoid_expiry_day_after": "<HH:MM or null>",
   "position_sizing_note": "<one sentence>",
   "key_insight": "<most important India-specific finding>",
-  "rule_changes": {{"param": "new_value"}}
+  "rule_changes": {{"param": "new_value"}},
+  "feature_requests": [
+    {{"title": "<short feature name>", "description": "<what and why>", "priority": "HIGH"|"MEDIUM"|"LOW", "feature_key": "<snake_case_key>"}}
+  ]
 }}
 """

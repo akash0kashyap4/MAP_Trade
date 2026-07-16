@@ -110,6 +110,16 @@ async def lifespan(app: FastAPI):
     # Recover any open positions from database on startup
     asyncio.create_task(trader.recover_active_positions())
 
+    # Auto-resolve AI requests whose features are already implemented
+    try:
+        from bot.auto_resolve import auto_resolve_implemented_features
+        _db_proxy = _DBProxy()
+        resolved_count = await auto_resolve_implemented_features(_db_proxy)
+        if resolved_count:
+            print(f"[main] Auto-resolved {resolved_count} AI request(s) for implemented features")
+    except Exception as e:
+        print(f"[main] Auto-resolve check failed (non-fatal): {e}")
+
     # If bot starts after 8:30 (missed the cron), run premarket analysis immediately
     from datetime import datetime
     import pytz
@@ -134,14 +144,29 @@ async def lifespan(app: FastAPI):
 
 class _DBProxy:
     @staticmethod
-    async def get_trades(days=30):
+    async def get_trades(days=30, completed_only=False):
         from data.database import get_trades
-        return await get_trades(days)
+        return await get_trades(days, completed_only=completed_only)
 
     @staticmethod
     async def save_learning_rules(rules, stats):
         from data.database import save_learning_rules
         return await save_learning_rules(rules, stats)
+
+    @staticmethod
+    async def save_ai_request(title, description, priority="MEDIUM", feature_key=None):
+        from data.database import save_ai_request
+        return await save_ai_request(title, description, priority, feature_key)
+
+    @staticmethod
+    async def get_ai_requests(include_resolved=False):
+        from data.database import get_ai_requests
+        return await get_ai_requests(include_resolved)
+
+    @staticmethod
+    async def resolve_ai_request(request_id):
+        from data.database import resolve_ai_request
+        return await resolve_ai_request(request_id)
 
 
 app = FastAPI(title="Ragi Trading Bot", lifespan=lifespan)

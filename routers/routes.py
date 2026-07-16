@@ -587,6 +587,46 @@ async def _run_learning_sync():
     print("[routes] On-demand learning complete.")
 
 
+# ── AI REQUESTS ───────────────────────────────────────────────────────────────
+
+@router.get("/ai-requests")
+async def get_ai_requests(include_resolved: bool = False):
+    """Return open AI feature requests (or all if include_resolved=true)."""
+    try:
+        return await db.get_ai_requests(include_resolved=include_resolved)
+    except Exception as e:
+        print(f"[ai-requests] DB error: {e}")
+        return []
+
+
+@router.post("/ai-requests/{request_id}/resolve")
+async def resolve_ai_request(request_id: int):
+    """Mark a specific AI request as resolved."""
+    try:
+        ok = await db.resolve_ai_request(request_id)
+        return {"ok": ok}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai-requests/auto-resolve")
+async def auto_resolve_features():
+    """Scan all open AI requests and auto-resolve any with implemented features."""
+    try:
+        from bot.auto_resolve import auto_resolve_implemented_features
+
+        class _Proxy:
+            async def get_ai_requests(self, include_resolved=False):
+                return await db.get_ai_requests(include_resolved=include_resolved)
+            async def resolve_ai_request(self, rid):
+                return await db.resolve_ai_request(rid)
+
+        count = await auto_resolve_implemented_features(_Proxy())
+        return {"resolved": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── TRADING MODE TOGGLE ───────────────────────────────────────────────────────
 
 class ModeRequest(BaseModel):

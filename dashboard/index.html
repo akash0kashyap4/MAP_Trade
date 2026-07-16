@@ -624,6 +624,7 @@
         <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">🔬</span> Backtest</div>
         <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">📊</span> Reports</div>
         <div class="nav-item" onclick="setNav(this)"><span class="nav-icon">⚙</span> Settings</div>
+        <div class="nav-item" id="nav-ai-requests" onclick="setNav(this)"><span class="nav-icon">🤖</span> AI Requests <span id="ai-req-badge" style="display:none;background:var(--red);color:#fff;border-radius:8px;padding:0 5px;font-size:9px;margin-left:4px">0</span></div>
       </div>
 
       <div class="sidebar-divider"></div>
@@ -847,6 +848,20 @@
                background:rgba(34,211,238,0.08);border:1px solid var(--cyan);border-radius:3px;
                font-size:10px;color:var(--cyan)"></div>
         </div><!-- /sec-settings -->
+
+        <!-- SECTION: AI Requests -->
+        <div id="sec-ai-requests" class="nav-section-panel" style="display:none">
+          <div class="section-label" style="margin-bottom:8px">AI REQUESTS</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:10px">
+            Feature requests from Claude's nightly review. Auto-removed when implemented.
+          </div>
+          <button onclick="autoResolveRequests()" style="font-size:10px;background:var(--bg3);color:var(--cyan);border:1px solid var(--cyan);border-radius:3px;padding:4px 10px;cursor:pointer;margin-bottom:10px">
+            ↻ Auto-Resolve Implemented
+          </button>
+          <div id="ai-requests-list">
+            <div style="color:var(--text-dim);font-size:11px">Loading…</div>
+          </div>
+        </div><!-- /sec-ai-requests -->
 
       </div>
     </div>
@@ -1927,6 +1942,7 @@ const NAV_SECTIONS = {
   'Backtest':        ['sec-backtest'],
   'Reports':         ['sec-reports'],
   'Settings':        ['sec-settings'],
+  'AI Requests':     ['sec-ai-requests'],
 };
 const NAV_TITLES = {
   'Dashboard':      'MARKET DATA & ANALYSIS',
@@ -1936,11 +1952,15 @@ const NAV_TITLES = {
   'Backtest':       'BACKTEST ENGINE',
   'Reports':        'REPORTS',
   'Settings':       'SETTINGS',
+  'AI Requests':    'AI REQUESTS',
 };
 function setNav(el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   el.classList.add('active');
-  const label = el.textContent.replace(el.querySelector('.nav-icon')?.textContent || '', '').trim();
+  // Build label from text nodes only (exclude child element text like badge numbers)
+  let label = '';
+  el.childNodes.forEach(n => { if (n.nodeType === 3) label += n.textContent; });
+  label = label.replace(el.querySelector('.nav-icon')?.textContent || '', '').trim();
   const show = NAV_SECTIONS[label] || ['sec-market','sec-positions','sec-trades','sec-backtest'];
   document.querySelectorAll('.nav-section-panel').forEach(p => p.style.display = 'none');
   show.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
@@ -2080,7 +2100,93 @@ document.querySelectorAll('.nav-item').forEach(n => {
   if (n.textContent.includes('Settings')) {
     n.addEventListener('click', loadRiskConfig);
   }
+  if (n.textContent.includes('AI Requests')) {
+    n.addEventListener('click', loadAiRequests);
+  }
 });
+
+// ── AI REQUESTS ──
+async function loadAiRequests() {
+  const list = document.getElementById('ai-requests-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:var(--text-dim);font-size:11px">Loading…</div>';
+  try {
+    const res = await fetch('/api/ai-requests');
+    const data = await res.json();
+    _renderAiRequests(data);
+    _updateAiReqBadge(data.length);
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--red);font-size:11px">Error: ${e}</div>`;
+  }
+}
+
+function _renderAiRequests(requests) {
+  const list = document.getElementById('ai-requests-list');
+  if (!list) return;
+  if (!requests || !requests.length) {
+    list.innerHTML = '<div style="color:var(--text-dim);font-size:11px;padding:10px 0">No open AI requests. All features implemented! 🎉</div>';
+    _updateAiReqBadge(0);
+    return;
+  }
+  const priorityColor = { HIGH: 'var(--red)', MEDIUM: 'var(--amber)', LOW: 'var(--text-dim)' };
+  list.innerHTML = requests.map(r => `
+    <div style="border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:8px;background:var(--bg2)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--text);font-weight:600">${r.title}</span>
+        <span style="font-size:9px;color:${priorityColor[r.priority]||'var(--text-dim)'};border:1px solid currentColor;border-radius:3px;padding:1px 5px;white-space:nowrap;margin-left:8px">${r.priority}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:6px">${r.description || ''}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:9px;color:var(--text-dim)">${(r.created_at||'').substring(0,10)}</span>
+        <button onclick="resolveAiRequest(${r.id}, this)" style="font-size:9px;background:transparent;color:var(--green);border:1px solid var(--green);border-radius:3px;padding:2px 8px;cursor:pointer">
+          ✓ Mark Resolved
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function _updateAiReqBadge(count) {
+  const badge = document.getElementById('ai-req-badge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function resolveAiRequest(id, btn) {
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  try {
+    await fetch(`/api/ai-requests/${id}/resolve`, { method: 'POST' });
+    await loadAiRequests();
+  } catch(e) {
+    if (btn) { btn.textContent = '✓ Mark Resolved'; btn.disabled = false; }
+  }
+}
+
+async function autoResolveRequests() {
+  try {
+    const res = await fetch('/api/ai-requests/auto-resolve', { method: 'POST' });
+    const d = await res.json();
+    await loadAiRequests();
+    if (d.resolved > 0) alert(`Auto-resolved ${d.resolved} request(s) for already-implemented features.`);
+    else alert('No additional auto-resolvable requests found.');
+  } catch(e) { alert('Auto-resolve failed: ' + e); }
+}
+
+// Refresh badge on page load and every 5 minutes
+async function _refreshAiReqBadge() {
+  try {
+    const res = await fetch('/api/ai-requests');
+    const data = await res.json();
+    _updateAiReqBadge(data.length);
+  } catch {}
+}
+_refreshAiReqBadge();
+setInterval(_refreshAiReqBadge, 5 * 60 * 1000);
 
 let _currentTF = '5m';
 async function setTF(tf, el) {
