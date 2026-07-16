@@ -134,7 +134,7 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
     import subprocess
     import shutil
 
-    claude_bin = shutil.which("claude") or "/usr/local/bin/claude"
+    claude_bin = shutil.which("claude") or "/opt/node22/bin/claude"
     full_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
 
     for attempt in range(max_retries + 1):
