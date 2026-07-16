@@ -140,10 +140,10 @@ def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
     for attempt in range(max_retries + 1):
         try:
             result = subprocess.run(
-                [claude_bin, "-p", full_prompt, "--output-format", "text"],
+                [claude_bin, "-p", full_prompt],
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=90,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
