@@ -17,6 +17,7 @@ def build_market_context(
     time_of_day: str,
     historical_win_rate: float = 0.0,
     capital_info: dict = None,
+    breadth: dict = None,
 ) -> dict:
     # Resample 1-min → 5-min, take last 60 min (12 bars)
     candles_5m = resample_5min(spot_candles)
@@ -41,6 +42,7 @@ def build_market_context(
         "time_of_day":               time_of_day,
         "historical_win_rate_similar": historical_win_rate,
         "capital_info":              capital_info or {},
+        "breadth":                   breadth or {},
     }
 
 

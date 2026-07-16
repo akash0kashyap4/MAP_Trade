@@ -43,6 +43,7 @@ class LiveStore:
         self.indicators: Dict[str, dict] = {}
         self.today_volume: Dict[str, int] = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
         self.india_vix: float = 0.0
+        self.breadth: dict = {}   # Feature 2: cross-index breadth, updated each tick
 
         # Runtime override flags (survive until bot restart)
         self.bot_paused: bool = False
@@ -188,6 +189,7 @@ class LiveStore:
             "last_tick":    self.last_tick_time,
             "tick_count":   self.tick_count,
             "india_vix":    self.india_vix,
+            "breadth":      self.breadth,
         }
 
 

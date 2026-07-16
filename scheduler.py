@@ -1,6 +1,7 @@
 from __future__ import annotations
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from bot.health_monitor import check_jobs_health
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -15,6 +16,20 @@ def setup_scheduler(trader, learner) -> AsyncIOScheduler:
         hour=8,
         minute=30,
         id="premarket",
+    )
+
+    # Feature 1: health check fires at 09:15 — alerts if morning jobs failed
+    from bot.trader import _send_telegram as _tg
+    async def _health_check():
+        await check_jobs_health(telegram_fn=_tg)
+
+    sched.add_job(
+        _health_check,
+        "cron",
+        day_of_week="mon-fri",
+        hour=9,
+        minute=15,
+        id="health_check",
     )
 
     sched.add_job(

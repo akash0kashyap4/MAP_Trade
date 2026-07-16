@@ -113,7 +113,19 @@ def _build_decision_user_msg(market_context: dict, context_block: str) -> str:
         capital_used_pct=cap.get("used_pct", 0),
         trade_cost_approx=approx_cost,
     )
-    return f"TODAY'S CONTEXT (prior decisions):\n{context_block}\n\n---\n\n{user_msg}"
+
+    # Feature 2: inject breadth data if available
+    breadth = market_context.get("breadth", {})
+    breadth_line = ""
+    if breadth:
+        from bot.breadth import breadth_summary
+        breadth_line = f"\n━━━ INDEX BREADTH ━━━\n{breadth_summary(breadth)}\n"
+
+    # Feature 3: note if bias came from fallback
+    bias_source = market_context.get("premarket_bias", {}).get("source", "")
+    fallback_note = "\n⚠️ Premarket pipeline was down — bias derived from OR/VWAP fallback signal.\n" if bias_source == "fallback_or_vwap" else ""
+
+    return f"TODAY'S CONTEXT (prior decisions):\n{context_block}\n\n---\n\n{user_msg}{breadth_line}{fallback_note}"
 
 
 def _extract_json(text: str) -> dict:

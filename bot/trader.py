@@ -31,6 +31,9 @@ from groww.historical import (
 )
 from groww.quotes import fetch_option_ltps
 from groww.live_feed import request_option_subscribe
+from bot.health_monitor import mark_premarket_ran, check_jobs_health
+from bot.breadth import calc_breadth, breadth_summary
+from bot.fallback_bias import get_effective_bias
 
 _executor = OrderExecutor()  # one instance for the session
 
@@ -151,6 +154,7 @@ class LiveTrader:
         plan = await self.agent.premarket_analysis(global_data)
         store.premarket_bias = plan
         store.ai_status = "waiting"
+        mark_premarket_ran()  # Feature 1: mark health flag
         print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
         await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
         self._market_open = True
@@ -466,6 +470,13 @@ class LiveTrader:
             "is_expiry_day": is_expiry_day,
         }
 
+        # Feature 2: compute cross-index breadth
+        breadth = calc_breadth()
+        store.breadth = breadth
+
+        # Feature 3: use fallback OR/VWAP bias if premarket pipeline was empty
+        effective_bias = get_effective_bias(store.premarket_bias, candles)
+
         context = build_market_context(
             instrument=instrument,
             spot_candles=candles,
@@ -474,7 +485,7 @@ class LiveTrader:
             options_snapshot=options_snapshot,
             open_positions=store.positions,
             today_pnl=store.total_pnl,
-            premarket_bias=store.premarket_bias,
+            premarket_bias=effective_bias,
             time_of_day=time_str,
             capital_info={
                 "initial":   store.initial_capital,
@@ -483,6 +494,7 @@ class LiveTrader:
                 "used_pct":  store.capital_used_pct,
                 "current":   round(store.current_capital, 2),
             },
+            breadth=breadth,
         )
 
         store.update_indicators(instrument, context["indicators"])
