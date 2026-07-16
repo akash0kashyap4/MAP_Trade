@@ -128,30 +128,31 @@ def _extract_json(text: str) -> dict:
 
 def _ask_claude(system: str, user: str, max_retries: int = 2) -> str:
     """
-    Call Anthropic API directly using the API key from config.py.
+    Call Claude via Claude CLI subprocess (claude -p).
+    No ANTHROPIC_API_KEY needed — uses existing Claude Code session.
     """
-    from anthropic import Anthropic
-    from config import ANTHROPIC_API_KEY
+    import subprocess
+    import shutil
 
-    if not ANTHROPIC_API_KEY:
-        print("[agent] Error: ANTHROPIC_API_KEY not found in .env")
-        return ""
-
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    claude_bin = shutil.which("claude") or "/usr/local/bin/claude"
+    full_prompt = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
 
     for attempt in range(max_retries + 1):
         try:
-            response = client.messages.create(
-                model=CLAUDE_MODEL,
-                max_tokens=4096,
-                system=system,
-                messages=[
-                    {"role": "user", "content": user}
-                ]
+            result = subprocess.run(
+                [claude_bin, "-p", full_prompt, "--output-format", "text"],
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
-            return response.content[0].text
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+            print(f"[agent] CLI attempt {attempt+1} failed (rc={result.returncode}): {result.stderr[:200]}")
+        except subprocess.TimeoutExpired:
+            print(f"[agent] CLI attempt {attempt+1} timed out")
         except Exception as e:
-            print(f"[agent] Anthropic API attempt {attempt+1} error: {e}")
+            print(f"[agent] CLI attempt {attempt+1} error: {e}")
+        if attempt < max_retries:
             time.sleep(2)
 
     return ""
