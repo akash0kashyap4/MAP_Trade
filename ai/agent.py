@@ -23,9 +23,9 @@ from ai.schema import validate_decision, validate_premarket, validate_trailing_s
 
 IST = pytz.timezone("Asia/Kolkata")
 
-# Model selection — Haiku 4.5 is fast and cost-efficient for trade decisions.
+# Model selection — Sonnet 4.6 balances quality and speed for trade decisions.
 # Override with CLAUDE_MODEL env var to swap models without code changes.
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 def _now_ist() -> str:
