@@ -545,6 +545,7 @@ button.hdr-badge {
                     <button class="btn btn-primary" onclick="insertStrategyExample()" style="padding:4px 10px;font-size:10px">EXAMPLE</button>
                     <button class="btn btn-primary" onclick="loadStrategyFile()" style="padding:4px 10px;font-size:10px">📂 FILE</button>
                     <button class="btn btn-all" onclick="validateStrategy()" style="padding:4px 10px;font-size:10px">✓ VALIDATE</button>
+                    <button class="btn btn-ok" onclick="saveStrategy()" style="padding:4px 10px;font-size:10px">💾 SAVE</button>
                   </span>
                 </div>
                 <input type="file" id="bt-strategy-file" accept=".json,application/json" style="display:none" onchange="onStrategyFilePicked(event)">
@@ -2397,6 +2398,23 @@ function onStrategyFilePicked(ev) {
   };
   reader.readAsText(file);
   ev.target.value = '';
+}
+async function saveStrategy() {
+  var parsed = _readCustomJson();
+  if (!parsed) return;
+  _customMsg('Saving…', false);
+  try {
+    var r = await fetch('/api/backtest/custom/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parsed)
+    });
+    var d = await r.json();
+    if (d.ok) {
+      _customMsg('✓ Strategy "' + d.name + '" saved to Strategy Lab.', false);
+    } else {
+      _customMsg('✗ ' + d.error, true);
+    }
+  } catch (e) { _customMsg('Save failed: ' + e.message, true); }
 }
 
 // ════════════════════════════════════════════════════

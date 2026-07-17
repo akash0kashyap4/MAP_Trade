@@ -302,6 +302,34 @@ async def validate_custom_strategy(defn: dict):
         return {"ok": False, "error": str(e)}
 
 
+@router.post("/backtest/custom/save")
+async def save_custom_strategy(defn: dict):
+    """Validate and save a user-uploaded strategy to the Strategy Lab."""
+    from backtest.custom_strategy import validate_custom, StrategyError
+    try:
+        normalized = validate_custom(defn)
+    except StrategyError as e:
+        return {"ok": False, "error": str(e)}
+
+    name = (normalized.get("name") or "").strip()
+    if not name:
+        return {"ok": False, "error": "Strategy must have a name."}
+
+    from data import database as db
+    await db.upsert_ai_strategy({
+        "name": name,
+        "rationale": normalized.get("description") or "User-uploaded custom strategy.",
+        "rules": [
+            f"Entry Long: {normalized.get('entry_long', [])}",
+            f"Entry Short: {normalized.get('entry_short', [])}",
+            f"Exit: {normalized.get('exit_conditions', [])}",
+        ],
+        "status": "PROPOSED",
+        "source": "user_upload",
+    })
+    return {"ok": True, "name": name}
+
+
 @router.get("/status")
 async def status():
     return store.sse_payload()
