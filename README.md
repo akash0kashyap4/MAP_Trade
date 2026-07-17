@@ -18,8 +18,7 @@ aerolink proxy) as the sole decision brain.
   and returns a JSON decision including its own `sl_premium` / `target_premium`.
 - **AI-Managed Exits** — while a position is in profit, Claude is polled every 5 min
   to decide `HOLD` / `MOVE_SL` / `EXIT`. No mechanical trailing formula.
-- **Realistic Costs** — every fill applies 1.5% slippage; every exit charges
-  brokerage + STT + txn + SEBI + stamp + GST so paper P&L matches a real broker.
+- **Realistic Costs** — every fill applies dynamic slippage (VIX + premium-based bid/ask spread modeling); every exit charges brokerage + STT + txn + SEBI + stamp + GST so paper/backtest P&L matches a real broker.
 - **Self-Learning** — nightly at 21:00 IST Claude reviews the last 30 days of
   trades and can suggest rule adjustments (surfaced in the dashboard).
 - **Live Feed** — Groww API for indices + option LTPs; REST fallback if feed drops.
@@ -95,11 +94,19 @@ Only truly safety-critical knobs remain — everything else is delegated to Clau
 TRADING = {
     "lots":                 1,
     "paper_trade":          True,
-    "max_positions":        999,
-    "max_daily_loss":       5000,   # hard circuit breaker
+    "max_positions":        2,      # max concurrent live positions (safety)
+    "max_daily_loss":       5000,   # hard safety brake
     "fallback_sl_pct":      0.30,   # used ONLY if AI omits sl_premium
     "fallback_target_pct":  0.60,   # used ONLY if AI omits target_premium
-    "min_confidence":       1,      # schema-compat; AI's conf is trusted
+    "trailing_sl_trigger":  0.40,   # move SL to cost when profit hits 40% of target
+    "trailing_sl_step":     0.20,   # trail SL by 20% each step
+    
+    # Advanced Risk Management Settings (Enabled by default)
+    "max_risk_per_trade":        2000,   # Max ₹ risk per trade
+    "max_trades_per_symbol":     3,      # Max trades per symbol per day
+    "consecutive_loss_limit":    2,      # Max consecutive losses before cooldown
+    "cooldown_duration_minutes": 120,    # Cooldown duration in minutes
+    "session_profit_lock":       8000,   # Profit lock target
 }
 ```
 

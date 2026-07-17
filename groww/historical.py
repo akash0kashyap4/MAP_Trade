@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta, time
 import math
 import pytz
 import yfinance as yf
+from data.yfsession import ticker as _yf_ticker
 from groww.auth import get_groww_client
 from groww.pricing import bs_option_price as _bs_option_price_impl
 
@@ -87,7 +88,7 @@ def get_index_candles(instrument_key: str, date_str: str) -> list:
 
     for yf_interval in intervals_to_try:
         try:
-            ticker = yf.Ticker(yf_symbol)
+            ticker = _yf_ticker(yf_symbol)
             df = ticker.history(start=dt_start.strftime("%Y-%m-%d"),
                                 end=dt_end.strftime("%Y-%m-%d"),
                                 interval=yf_interval)
@@ -134,7 +135,7 @@ def get_india_vix() -> float:
 
     # yfinance Fallback
     try:
-        ticker = yf.Ticker("^INDIAVIX")
+        ticker = _yf_ticker("^INDIAVIX")
         info = ticker.fast_info
         ltp = getattr(info, "last_price", None) or getattr(info, "regularMarketPrice", None)
         if ltp:
@@ -299,6 +300,12 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
             expiry_date=expiry,
         )
         if chain_data:
+            try:
+                from data.store import store
+                store.using_mock_chain = False
+            except ImportError:
+                pass
+
             atm = round_to_atm(spot, step)
             ce_oi_total = pe_oi_total = 0
             atm_iv = atm_ce_oi = atm_pe_oi = 0
@@ -360,6 +367,12 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
         print(f"[historical] NSE option chain fallback failed: {nse_err}")
 
     # Option Chain Mock Fallback (last resort)
+    try:
+        from data.store import store
+        store.using_mock_chain = True
+    except ImportError:
+        pass
+
     try:
         atm = round_to_atm(spot, step)
         days_to_exp = max(0, (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days)
@@ -423,6 +436,11 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
                         f"NSE-{clean_symbol}-{expiry_date}-{atm_strike}-{option_type}"))
 
                     if ltp > 0:
+                        try:
+                            from data.store import store
+                            store.using_mock_options = False
+                        except ImportError:
+                            pass
                         return {
                             "ltp":            ltp,
                             "strike":         atm_strike,
@@ -435,6 +453,12 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
         pass
 
     # Option Pricing Mock Fallback (Black-Scholes-like simplified intrinsic + extrinsic model)
+    try:
+        from data.store import store
+        store.using_mock_options = True
+    except ImportError:
+        pass
+
     try:
         atm_strike = round_to_atm(spot, step)
         # Expiry is usually upcoming Thursday (NSE) or Friday (BSE)

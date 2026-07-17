@@ -18,9 +18,28 @@ from typing import Literal
 DEFAULT_SLIPPAGE_PCT = 0.015
 
 
-def apply_slippage(premium: float, side: Literal["buy", "sell"], slippage_pct: float = DEFAULT_SLIPPAGE_PCT) -> float:
+def get_dynamic_slippage_pct(premium: float, vix: float = 15.0) -> float:
+    """
+    Calculate dynamic slippage percentage based on premium and VIX.
+    Wider spreads for low-priced premiums (higher percentage-wise) and during high VIX periods.
+    """
+    if premium <= 0:
+        return DEFAULT_SLIPPAGE_PCT
+    base_pct = 0.010
+    if premium < 50:
+        base_pct += 0.015
+    elif premium < 100:
+        base_pct += 0.008
+
+    vix_multiplier = max(1.0, vix / 15.0)
+    return max(0.005, min(0.05, base_pct * vix_multiplier))
+
+
+def apply_slippage(premium: float, side: Literal["buy", "sell"], slippage_pct: float | None = None, vix: float = 15.0) -> float:
     if premium <= 0:
         return premium
+    if slippage_pct is None:
+        slippage_pct = get_dynamic_slippage_pct(premium, vix)
     if side == "buy":
         return round(premium * (1 + slippage_pct), 2)
     return round(premium * (1 - slippage_pct), 2)

@@ -89,6 +89,20 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     priority TEXT DEFAULT 'MEDIUM', status TEXT DEFAULT 'NEW',
     created_at TEXT NOT NULL, UNIQUE(suggestion)
 );
+CREATE TABLE IF NOT EXISTS user_sessions (
+    token TEXT PRIMARY KEY,
+    expiry REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operator_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    username TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    action TEXT NOT NULL,
+    prev_state TEXT,
+    new_state TEXT,
+    request_id TEXT
+);
 """
 
 # ── Postgres DDL ($N params, SERIAL) ─────────────────────────────────────────
@@ -146,6 +160,20 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     id SERIAL PRIMARY KEY, sdate TEXT NOT NULL, category TEXT, suggestion TEXT NOT NULL,
     priority TEXT DEFAULT 'MEDIUM', status TEXT DEFAULT 'NEW',
     created_at TEXT NOT NULL, UNIQUE(suggestion)
+);
+CREATE TABLE IF NOT EXISTS user_sessions (
+    token TEXT PRIMARY KEY,
+    expiry REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operator_audit (
+    id SERIAL PRIMARY KEY,
+    ts TEXT NOT NULL,
+    username TEXT NOT NULL,
+    ip TEXT NOT NULL,
+    action TEXT NOT NULL,
+    prev_state TEXT,
+    new_state TEXT,
+    request_id TEXT
 );
 """
 
@@ -895,4 +923,49 @@ async def get_ai_suggestions(limit: int = 100) -> list[dict]:
         "CASE priority WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END, id DESC LIMIT ?",
         (int(limit),), tag="get_ai_suggestions",
     )
+
+
+# ── Sessions & Audits ──────────────────────────────────────────────────────────
+
+async def save_session(token: str, expiry: float) -> None:
+    await _db_exec(
+        "INSERT INTO user_sessions (token, expiry) VALUES (?, ?) "
+        "ON CONFLICT(token) DO UPDATE SET expiry=excluded.expiry",
+        (token, expiry),
+        tag="save_session",
+    )
+
+
+async def delete_session(token: str) -> None:
+    await _db_exec(
+        "DELETE FROM user_sessions WHERE token=?",
+        (token,),
+        tag="delete_session",
+    )
+
+
+async def get_session(token: str) -> float | None:
+    row = await _db_fetchone(
+        "SELECT expiry FROM user_sessions WHERE token=?",
+        (token,),
+        tag="get_session",
+    )
+    return row["expiry"] if row else None
+
+
+async def insert_audit_log(
+    username: str,
+    ip: str,
+    action: str,
+    prev_state: str | None = None,
+    new_state: str | None = None,
+    request_id: str | None = None,
+) -> None:
+    await _db_exec(
+        "INSERT INTO operator_audit (ts, username, ip, action, prev_state, new_state, request_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (_now_ist(), username, ip, action, prev_state, new_state, request_id),
+        tag="insert_audit_log",
+    )
+
 
