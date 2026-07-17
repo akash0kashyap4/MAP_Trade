@@ -49,6 +49,9 @@ class LiveStore:
         # Today's news pulse (set by ai.news.NewsBrain.scan)
         self.news_insight: dict = {}
 
+        self.using_mock_options: bool = False
+        self.using_mock_chain: bool = False
+
     def set_prev_close(self, instrument: str, close: float):
         """Set yesterday's close — called once at startup."""
         info = self.prices.get(instrument)
@@ -140,7 +143,13 @@ class LiveStore:
         self.indicators     = {}
         self.premarket_bias = {}
         self.today_volume   = {"NIFTY": 0, "BANKNIFTY": 0, "SENSEX": 0}
+        self.using_mock_options = False
+        self.using_mock_chain   = False
         # bot_paused and new_entries_enabled are operator controls — intentionally NOT reset daily
+
+    @property
+    def using_mock_data(self) -> bool:
+        return self.using_mock_options or self.using_mock_chain
 
     @property
     def trading_mode(self) -> str:
@@ -170,6 +179,7 @@ class LiveStore:
                 for k, v in self.prices.items()
             },
             "candles":    candles_fmt,
+            "using_mock_data": self.using_mock_data,
             "indicators": self.indicators.get("NIFTY", {}),
             "positions":  self.positions,
             "signals":    self.signals[:10],

@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 import sys
+import uuid
 
 import uvicorn
 from fastapi import Depends, FastAPI, Request, HTTPException
@@ -20,7 +21,7 @@ from pydantic import BaseModel
 from config import IS_PRODUCTION
 from auth import (
     COOKIE_NAME, DEFAULT_PASSWORD, SESSION_TTL, check_session, create_session,
-    destroy_session, require_user, resolve_bot_password,
+    destroy_session, require_user, resolve_bot_password, verify_password,
 )
 
 from data.database import init_db
@@ -167,6 +168,14 @@ app.include_router(api_router, prefix="/api", dependencies=[Depends(require_user
 
 
 @app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request.state.request_id = str(uuid.uuid4())
+    resp = await call_next(request)
+    resp.headers["X-Request-ID"] = request.state.request_id
+    return resp
+
+
+@app.middleware("http")
 async def security_headers(request: Request, call_next):
     resp = await call_next(request)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -204,75 +213,109 @@ async def stream(request: Request):
     # SSE carries the same session cookie as the REST API (EventSource sends
     # cookies on same-origin requests), so it gets the same gate. Anonymous
     # clients are rejected before any store data is streamed.
-    require_user(request)
+    await require_user(request)
     return sse_endpoint(request)
 
 
 # ─── Simple brute-force guard ────────────────────────────────────────────────
 _LOGIN_MAX_FAILS = 10
+_LOGIN_GLOBAL_MAX_FAILS = 50
 _LOGIN_LOCKOUT_SECONDS = 15 * 60  # 15-min lockout window; resets after this
-_login_failures: dict[str, tuple[int, float]] = {}  # ip -> (count, first_failure_ts)
+_login_failures: dict[tuple[str, str], tuple[int, float]] = {}  # (ip, username) -> (count, first_failure_ts)
+_global_failures: list[float] = []  # list of failure timestamps
 
 
-def _is_rate_limited(ip: str) -> bool:
+def _is_rate_limited(ip: str, username: str) -> bool:
     import time
-    entry = _login_failures.get(ip)
+    now = time.time()
+
+    # Clean up old global failures
+    global _global_failures
+    _global_failures = [t for t in _global_failures if now - t <= _LOGIN_LOCKOUT_SECONDS]
+    if len(_global_failures) >= _LOGIN_GLOBAL_MAX_FAILS:
+        return True
+
+    entry = _login_failures.get((ip, username))
     if entry is None:
         return False
     count, first_ts = entry
-    if time.time() - first_ts > _LOGIN_LOCKOUT_SECONDS:
-        _login_failures.pop(ip, None)
+    if now - first_ts > _LOGIN_LOCKOUT_SECONDS:
+        _login_failures.pop((ip, username), None)
         return False
     return count >= _LOGIN_MAX_FAILS
 
 
-def _record_failure(ip: str) -> None:
+def _record_failure(ip: str, username: str) -> None:
     import time
-    entry = _login_failures.get(ip)
+    now = time.time()
+    _global_failures.append(now)
+
+    entry = _login_failures.get((ip, username))
     if entry is None:
-        _login_failures[ip] = (1, time.time())
+        _login_failures[(ip, username)] = (1, now)
     else:
         count, first_ts = entry
-        _login_failures[ip] = (count + 1, first_ts)
+        _login_failures[(ip, username)] = (count + 1, first_ts)
 
 
 # ─── Auth routes ─────────────────────────────────────────────────────────────
 @app.post("/api/login")
 async def api_login(body: LoginBody, request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    if _is_rate_limited(client_ip):
+    req_id = request.state.request_id
+
+    if _is_rate_limited(client_ip, body.username):
+        msg = f"🚨 BRUTE FORCE ALERT — Lockout triggered for IP={client_ip}, Username={body.username}."
+        from data import database as db
+        await db.insert_audit_log(username=body.username, ip=client_ip, action="lockout_triggered", request_id=req_id)
+        from bot.trader import _send_telegram
+        asyncio.create_task(_send_telegram(msg))
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
 
-    if body.username == BOT_USERNAME and hmac.compare_digest(body.password, BOT_PASSWORD):
-        _login_failures.pop(client_ip, None)
-        token = create_session()
+    from data import database as db
+    if body.username == BOT_USERNAME and verify_password(body.password, BOT_PASSWORD):
+        _login_failures.pop((client_ip, body.username), None)
+        token = await create_session()
         resp = JSONResponse({"ok": True})
         resp.set_cookie(
             COOKIE_NAME, token,
             httponly=True, secure=True, samesite="lax",
             max_age=int(SESSION_TTL),
         )
+        await db.insert_audit_log(username=body.username, ip=client_ip, action="login_success", request_id=req_id)
         return resp
-    _record_failure(client_ip)
+
+    _record_failure(client_ip, body.username)
+    await db.insert_audit_log(username=body.username, ip=client_ip, action="login_failure", request_id=req_id)
     raise HTTPException(status_code=401, detail="ACCESS DENIED — Invalid credentials")
+
 
 @app.post("/api/logout")
 async def api_logout(request: Request):
     # POST (not GET): logout mutates session state, so it must not be triggerable
     # by a prefetch, an <img> src, or a cross-site GET.
-    destroy_session(request.cookies.get(COOKIE_NAME))
+    token = request.cookies.get(COOKIE_NAME)
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+
+    await destroy_session(token)
+    from data import database as db
+    await db.insert_audit_log(username=BOT_USERNAME, ip=client_ip, action="logout", request_id=req_id)
+
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(COOKIE_NAME)
     return resp
+
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
 @app.get("/")
 async def login_page():
     return FileResponse(BASE_DIR / "dashboard" / "login.html")
 
+
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    if not check_session(request):
+    if not await check_session(request):
         return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index.html",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

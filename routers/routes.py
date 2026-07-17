@@ -339,13 +339,24 @@ async def rules():
 
 
 @router.post("/backtest/run")
-async def backtest_run(req: BacktestRequest, background_tasks: BackgroundTasks):
+async def backtest_run(req: BacktestRequest, background_tasks: BackgroundTasks, request: Request):
     try:
         req.validate_request()
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     if _backtest_status["running"]:
         raise HTTPException(status_code=409, detail="Backtest already running")
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="run_backtest",
+        new_state=f"instrument={req.instrument}, start={req.start_date}, end={req.end_date}",
+        request_id=req_id
+    )
 
     background_tasks.add_task(_run_backtest, req)
     return {"status": "started"}
@@ -423,7 +434,7 @@ async def manual_tick(request: Request):
     if IS_PRODUCTION:
         raise HTTPException(status_code=404, detail="Not Found")
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
     trader = request.app.state.trader
     trader._market_open = True
     await trader.market_loop_tick()
@@ -457,7 +468,7 @@ class TradeImport(BaseModel):
 
 
 @router.post("/trades/import")
-async def import_trades(trades: list[TradeImport]):
+async def import_trades(trades: list[TradeImport], request: Request):
     """
     Feed historical trades for self-learning.
     The nightly review at 9 PM will analyse these along with paper trades.
@@ -469,6 +480,17 @@ async def import_trades(trades: list[TradeImport]):
        "exit_reason":"TARGET","strike":24000,"expiry":"2025-01-16","quantity":75}
     ]
     """
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="import_trades",
+        new_state=f"count={len(trades)}",
+        request_id=req_id
+    )
+
     saved = 0
     from config import LOT_SIZES
     for t in trades:
@@ -635,8 +657,18 @@ async def _run_download(req: DataDownloadRequest):
 
 
 @router.post("/learn/run-now")
-async def run_learning_now(background_tasks: BackgroundTasks):
+async def run_learning_now(background_tasks: BackgroundTasks, request: Request):
     """Trigger nightly self-learning immediately (don't wait for 9 PM)."""
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="run_learning",
+        request_id=req_id
+    )
+
     background_tasks.add_task(_run_learning_sync)
     return {"status": "learning started"}
 
@@ -676,6 +708,11 @@ TRADING_MODES: dict[str, dict] = {
 
 class ModeRequest(BaseModel):
     mode: str  # one of TRADING_MODES
+    confirm_phrase: Optional[str] = None
+
+
+class SquareOffRequest(BaseModel):
+    confirm_phrase: str
 
 
 def current_trading_mode() -> str:
@@ -871,9 +908,12 @@ async def override_state(req: OverrideStateRequest, request: Request):
     Requires authentication. Changes are in-memory (reset on restart).
     """
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
 
     changed = {}
+    prev_paused = store.bot_paused
+    prev_new_entries = store.new_entries_enabled
+
     if req.paused is not None:
         store.bot_paused = req.paused
         changed["bot_paused"] = store.bot_paused
@@ -883,6 +923,20 @@ async def override_state(req: OverrideStateRequest, request: Request):
 
     if not changed:
         raise HTTPException(status_code=400, detail="Provide 'paused' or 'new_entries' in body")
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    prev_str = f"paused={prev_paused}, new_entries={prev_new_entries}"
+    new_str = f"paused={store.bot_paused}, new_entries={store.new_entries_enabled}"
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="override_state",
+        prev_state=prev_str,
+        new_state=new_str,
+        request_id=req_id
+    )
 
     msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
     print(msg)
@@ -895,19 +949,38 @@ async def override_state(req: OverrideStateRequest, request: Request):
 
 
 @router.post("/override/square-off")
-async def emergency_square_off(request: Request):
+async def emergency_square_off(req: SquareOffRequest, request: Request):
     """
     Emergency circuit breaker: close all open positions at market price
     (real exit orders for live positions), pause the bot, and notify Telegram.
-    Requires authentication.
+    Requires authentication and the confirmation phrase 'SQUARE-OFF'.
     """
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
+
+    if req.confirm_phrase != "SQUARE-OFF":
+        raise HTTPException(
+            status_code=428,
+            detail="Missing or incorrect confirmation phrase 'SQUARE-OFF' for emergency square-off."
+        )
 
     trader = request.app.state.trader
     pnl_before = store.realized_pnl
     closed = await trader.emergency_square_off()
     total_pnl = round(store.realized_pnl - pnl_before, 2)
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="emergency_square_off",
+        prev_state="active",
+        new_state="paused",
+        request_id=req_id
+    )
+
     return {
         "ok":         True,
         "closed":     closed,
@@ -920,18 +993,28 @@ async def emergency_square_off(request: Request):
 async def set_trading_mode(req: ModeRequest, request: Request):
     """
     Switch trading mode at runtime without restarting the bot.
-    Switching to 'live' requires AngelOne credentials in env.
+    Switching to 'live' requires AngelOne credentials in env and 'GO LIVE' confirmation.
     Requires authentication.
     """
     import config
 
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
 
     mode_def = TRADING_MODES.get(req.mode)
     if mode_def is None:
         raise HTTPException(status_code=400,
-                            detail=f"mode must be one of {sorted(TRADING_MODES)}")
+                             detail=f"mode must be one of {sorted(TRADING_MODES)}")
+
+    if req.mode == "live" and req.confirm_phrase != "GO LIVE":
+        raise HTTPException(
+            status_code=428,
+            detail="Missing or incorrect confirmation phrase 'GO LIVE' to switch to live trading."
+        )
+
+    prev_mode = "paper" if config.TRADING["paper_trade"] else "live"
+    if prev_mode == req.mode:
+        return {"ok": True, "mode": req.mode}
 
     loop = asyncio.get_running_loop()
     if mode_def["validate"] is not None:
@@ -943,6 +1026,19 @@ async def set_trading_mode(req: ModeRequest, request: Request):
 
     config.TRADING["paper_trade"] = mode_def["paper_trade"]
     print(f"[routes] Trading mode changed → {req.mode.upper()}")
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="set_trading_mode",
+        prev_state=prev_mode,
+        new_state=req.mode,
+        request_id=req_id
+    )
+
     try:
         await loop.run_in_executor(None, send_telegram,
                                    f"⚙️ Trading mode changed to: {req.mode.upper()}")
@@ -993,7 +1089,18 @@ async def get_report(report_date: str):
 async def generate_report_now(request: Request):
     """Force-generate today's report immediately (also runs after close at 15:45)."""
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="generate_report",
+        request_id=req_id
+    )
+
     reporter = getattr(request.app.state, "reporter", None)
     if reporter is None:
         raise HTTPException(status_code=503, detail="Reporter not initialized")
@@ -1005,7 +1112,18 @@ async def generate_report_now(request: Request):
 async def news_scan_now(request: Request):
     """Force a news fetch + AI analysis right now."""
     _check_same_origin(request)
-    require_user(request)
+    await require_user(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    req_id = request.state.request_id
+    username = os.getenv("BOT_USERNAME", "admin")
+    await db.insert_audit_log(
+        username=username,
+        ip=client_ip,
+        action="news_scan",
+        request_id=req_id
+    )
+
     news_brain = getattr(request.app.state, "news_brain", None)
     if news_brain is None:
         raise HTTPException(status_code=503, detail="News brain not initialized")

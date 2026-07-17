@@ -2,9 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-
-BROKERAGE_PER_SIDE = 20.0
-STT_RATE = 0.0005
+from bot.fees import apply_slippage, realistic_pnl
 
 
 @dataclass
@@ -33,8 +31,9 @@ def simulate_trade(
         return None
 
     quantity = lot_size * lots
-    slippage = entry_price * 0.005
-    actual_entry = entry_price + slippage
+    
+    # Apply entry slippage dynamically (using default VIX 15.0 for backtest consistency)
+    actual_entry = apply_slippage(entry_price, "buy", vix=15.0)
 
     sl_pts    = sl_rs    / quantity
     tgt_pts   = target_rs / quantity
@@ -65,26 +64,23 @@ def simulate_trade(
         if candle_low <= current_sl:
             exit_price  = current_sl
             exit_reason = "SL"
-            pnl_raw     = (exit_price - actual_entry) * quantity
-            pnl_final   = pnl_raw - _brokerage(actual_entry, exit_price, quantity)
-            return TradeResult(actual_entry, exit_price, exit_reason, quantity, pnl_raw, pnl_final, 0, idx)
+            # Apply exit slippage dynamically on SL exit
+            actual_exit = apply_slippage(exit_price, "sell", vix=15.0)
+            breakdown = realistic_pnl(actual_entry, actual_exit, quantity)
+            return TradeResult(actual_entry, actual_exit, exit_reason, quantity, breakdown["pnl_raw"], breakdown["pnl_final"], 0, idx)
 
         if h >= target_price:
             exit_price  = target_price
             exit_reason = "TARGET"
-            pnl_raw     = (exit_price - actual_entry) * quantity
-            pnl_final   = pnl_raw - _brokerage(actual_entry, exit_price, quantity)
-            return TradeResult(actual_entry, exit_price, exit_reason, quantity, pnl_raw, pnl_final, 0, idx)
+            # Apply exit slippage dynamically on target exit
+            actual_exit = apply_slippage(exit_price, "sell", vix=15.0)
+            breakdown = realistic_pnl(actual_entry, actual_exit, quantity)
+            return TradeResult(actual_entry, actual_exit, exit_reason, quantity, breakdown["pnl_raw"], breakdown["pnl_final"], 0, idx)
 
     last = candles_after_entry[-1]
     exit_price  = float(last[4])
     exit_reason = "EOD"
-    pnl_raw     = round((exit_price - actual_entry) * quantity, 2)
-    pnl_final   = round(pnl_raw - _brokerage(actual_entry, exit_price, quantity), 2)
-    return TradeResult(actual_entry, exit_price, exit_reason, quantity, pnl_raw, pnl_final, 0, len(candles_after_entry) - 1)
-
-
-def _brokerage(entry: float, exit_p: float, qty: int) -> float:
-    buy_side  = BROKERAGE_PER_SIDE
-    sell_side = BROKERAGE_PER_SIDE + (exit_p * qty * STT_RATE)
-    return buy_side + sell_side
+    # Apply exit slippage dynamically on EOD exit
+    actual_exit = apply_slippage(exit_price, "sell", vix=15.0)
+    breakdown = realistic_pnl(actual_entry, actual_exit, quantity)
+    return TradeResult(actual_entry, actual_exit, exit_reason, quantity, breakdown["pnl_raw"], breakdown["pnl_final"], 0, len(candles_after_entry) - 1)

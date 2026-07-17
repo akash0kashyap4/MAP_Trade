@@ -344,6 +344,11 @@ button.hdr-badge {
         <span id="feed-status" style="font-size:10px;font-weight:600;color:#A1A1AA;letter-spacing:.3px">CLOSED</span>
       </div>
 
+      <!-- Mock Data Warning Badge -->
+      <div id="mock-badge" style="display:none;align-items:center;gap:5px;padding:4px 10px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:16px;color:#EF4444;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap" title="Groww API option chain failed, using synthetic/mock pricing fallbacks.">
+        ⚠️ SIMULATED PRICE ACTIVE
+      </div>
+
       <!-- Next check -->
       <span style="font-size:11px;color:#3F3F46;white-space:nowrap">Next <span id="next-check" style="color:#52525B">──</span></span>
 
@@ -357,7 +362,7 @@ button.hdr-badge {
       <button class="hdr-badge paper" id="mode-btn" onclick="requestModeSwitch()" title="Click to switch trading mode" aria-live="polite">● PAPER MODE</button>
 
       <!-- Logout -->
-      <a href="/api/logout" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;text-decoration:none;flex-shrink:0" title="Logout">R</a>
+      <button onclick="logout()" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0" title="Logout">R</button>
     </div>
 
     <!-- CONTENT ROW -->
@@ -774,14 +779,49 @@ button.hdr-badge {
   <div class="modal-box">
     <div class="modal-title" id="mode-modal-title">⚠ SWITCH TO LIVE TRADING</div>
     <div class="modal-text" id="mode-modal-text"></div>
+    <div id="mode-confirm-input-container" style="display:none;margin-top:12px;width:100%">
+      <div style="font-size:11px;color:#71717A;margin-bottom:6px">Type <strong style="color:#EF4444">GO LIVE</strong> to confirm:</div>
+      <input type="text" id="mode-confirm-input" placeholder="GO LIVE" style="width:100%;background:#0A0A0D;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;color:white;font-family:inherit;font-size:12px;box-sizing:border-box">
+    </div>
     <div class="modal-actions">
       <button class="settings-btn" onclick="closeModeModal()">CANCEL</button>
-      <button class="settings-btn danger" id="mode-modal-confirm">CONFIRM</button>
+      <button class="settings-btn danger" id="mode-modal-confirm" disabled>CONFIRM</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="squareoff-modal" style="display:none" role="alertdialog" aria-modal="true" aria-labelledby="sq-modal-title">
+  <div class="modal-box">
+    <div class="modal-title" id="sq-modal-title" style="color:#EF4444">⚠️ EMERGENCY SQUARE-OFF</div>
+    <div class="modal-text" style="color:#A1A1AA">Close ALL open positions at market price, pause the bot, and notify Telegram? This action cannot be undone.</div>
+    <div style="margin-top:12px;width:100%">
+      <div style="font-size:11px;color:#71717A;margin-bottom:6px">Type <strong style="color:#EF4444">SQUARE-OFF</strong> to execute:</div>
+      <input type="text" id="sq-confirm-input" placeholder="SQUARE-OFF" style="width:100%;background:#0A0A0D;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px 12px;color:white;font-family:inherit;font-size:12px;box-sizing:border-box">
+    </div>
+    <div class="modal-actions">
+      <button class="settings-btn" onclick="closeSquareOffModal()">CANCEL</button>
+      <button class="settings-btn danger" id="sq-modal-confirm" disabled>EXECUTE</button>
     </div>
   </div>
 </div>
 
 <script>
+// Global Fetch Interceptor to redirect 401 Unauthorized to login page
+(function() {
+  var originalFetch = window.fetch;
+  window.fetch = async function() {
+    try {
+      var response = await originalFetch.apply(this, arguments);
+      if (response.status === 401) {
+        window.location.href = '/';
+      }
+      return response;
+    } catch (err) {
+      throw err;
+    }
+  };
+})();
+
 // ════════════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════════════
@@ -860,20 +900,33 @@ function requestModeSwitch(mode) {
     var modal = document.getElementById('mode-modal');
     var text = document.getElementById('mode-modal-text');
     var confirmBtn = document.getElementById('mode-modal-confirm');
-    if (modal && text && confirmBtn) {
+    var inputContainer = document.getElementById('mode-confirm-input-container');
+    var confirmInput = document.getElementById('mode-confirm-input');
+
+    if (modal && text && confirmBtn && inputContainer && confirmInput) {
       text.textContent = TRADING_MODES.live.warning;
+      inputContainer.style.display = 'block';
+      confirmInput.value = '';
+      confirmBtn.disabled = true;
+
+      confirmInput.oninput = function() {
+        confirmBtn.disabled = (confirmInput.value !== 'GO LIVE');
+      };
+
       confirmBtn.onclick = function() {
         closeModeModal();
-        _performModeSwitch('live');
+        _performModeSwitch('live', 'GO LIVE');
       };
       modal.style.display = 'flex';
     }
   } else {
+    var inputContainer = document.getElementById('mode-confirm-input-container');
+    if (inputContainer) inputContainer.style.display = 'none';
     _performModeSwitch('paper');
   }
 }
 
-async function _performModeSwitch(mode) {
+async function _performModeSwitch(mode, confirm_phrase) {
   _modeSwitching = true;
   var btn = document.getElementById('mode-btn');
   if (btn) {
@@ -886,7 +939,7 @@ async function _performModeSwitch(mode) {
     var r = await fetch('/api/trading/set-mode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: mode })
+      body: JSON.stringify({ mode: mode, confirm_phrase: confirm_phrase })
     });
     var d = await r.json();
     if (!r.ok || !d.ok) {
@@ -930,9 +983,14 @@ es.onerror = function() {
   updateFeedStatus('closed');
   _setConn('#EF4444');
   document.getElementById('conn-lbl').style.color = '#EF4444';
+  fetch('/api/rules').catch(function(){});
 };
 es.onmessage = function(e) {
   var d = JSON.parse(e.data);
+  if (d.using_mock_data !== undefined) {
+    var mb = document.getElementById('mock-badge');
+    if (mb) mb.style.display = d.using_mock_data ? 'flex' : 'none';
+  }
   if (d.prices)      updatePrices(d.prices);
   if (d.positions)   updatePositions(d.positions);
   if (d.signals)     updateSignals(d.signals);
@@ -1132,7 +1190,9 @@ function updatePositions(positions) {
   }
   tb.innerHTML = positions.map(function(p) {
     var c = p.pnl>=0?'#22C55E':'#EF4444';
-    return '<tr><td style="color:#818CF8;font-weight:500">'+p.instrument+' '+p.strike+(p.type||'')+'</td>'+
+    var isSimulated = p.instrument_key && p.instrument_key.startsWith('MOCK-NSE-');
+    var badge = isSimulated ? ' <span style="font-size:9px;background:rgba(239,68,68,.1);color:#EF4444;border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:0 4px;font-weight:700;margin-left:5px" title="Synthetic options price. Real-time option data failed.">SIMULATED</span>' : '';
+    return '<tr><td style="color:#818CF8;font-weight:500">'+p.instrument+' '+p.strike+(p.type||'')+badge+'</td>'+
       '<td style="text-align:right;color:#A1A1AA">₹'+(p.entry||0).toFixed(2)+'</td>'+
       '<td style="text-align:right">₹'+((p.ltp||p.entry)||0).toFixed(2)+'</td>'+
       '<td style="text-align:right;color:'+c+';font-weight:600">₹'+Math.round(p.pnl||0).toLocaleString('en-IN')+'</td>'+
@@ -1673,17 +1733,53 @@ async function toggleEntries() {
   } catch(e){_showOverrideMsg(''+e,false);}
 }
 
-async function confirmSquareOff() {
-  if(!confirm('⚠️ EMERGENCY SQUARE-OFF\n\nClose ALL open positions at market and pause the bot?\nThis cannot be undone.'))return;
-  var btn=document.getElementById('btn-squareoff');
-  if(btn){btn.textContent='CLOSING…';btn.disabled=true;}
+function closeSquareOffModal() {
+  var modal = document.getElementById('squareoff-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function confirmSquareOff() {
+  var modal = document.getElementById('squareoff-modal');
+  var confirmBtn = document.getElementById('sq-modal-confirm');
+  var confirmInput = document.getElementById('sq-confirm-input');
+
+  if (modal && confirmBtn && confirmInput) {
+    confirmInput.value = '';
+    confirmBtn.disabled = true;
+
+    confirmInput.oninput = function() {
+      confirmBtn.disabled = (confirmInput.value !== 'SQUARE-OFF');
+    };
+
+    confirmBtn.onclick = function() {
+      closeSquareOffModal();
+      _performSquareOff('SQUARE-OFF');
+    };
+    modal.style.display = 'flex';
+  }
+}
+
+async function _performSquareOff(confirm_phrase) {
+  var btn = document.getElementById('btn-squareoff');
+  if (btn) { btn.textContent = 'CLOSING…'; btn.disabled = true; }
   try {
-    var r=await fetch('/api/override/square-off',{method:'POST'});
-    var d=await r.json();
-    if(!r.ok){_showOverrideMsg(d.detail||'Error',false);}
-    else{_botPaused=true;_updateOverrideBtns();_showOverrideMsg('Square-off complete: '+d.closed+' position(s) closed. P&L ₹'+(d.total_pnl||0).toLocaleString('en-IN'),true);}
-  } catch(e){_showOverrideMsg(''+e,false);}
-  if(btn){btn.textContent='SQUARE OFF ALL';btn.disabled=false;}
+    var r = await fetch('/api/override/square-off', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm_phrase: confirm_phrase })
+    });
+    var d = await r.json();
+    if (!r.ok) {
+      _showOverrideMsg(d.detail || d.error || 'Error', false);
+    } else {
+      _botPaused = true;
+      _updateOverrideBtns();
+      _showOverrideMsg('Square-off complete: ' + d.closed + ' position(s) closed. P&L ₹' + (d.total_pnl || 0).toLocaleString('en-IN'), true);
+    }
+  } catch (e) {
+    _showOverrideMsg('' + e, false);
+  }
+  if (btn) { btn.textContent = 'SQUARE OFF ALL'; btn.disabled = false; }
 }
 
 function _syncOverrideState(payload) {
@@ -1774,7 +1870,7 @@ function renderBacktestResult(r) {
       dowHtml+='<div style="font-size:10px;color:#52525B;margin-top:8px;margin-bottom:4px">WIN RATE BY DAY</div>';
       dowHtml+=Object.entries(r.win_rate_by_dow).map(function(e){var c=e[1]>=50?'#22C55E':'#EF4444';return'<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:#71717A">'+e[0]+'</span><span style="color:'+c+'">'+e[1].toFixed(0)+'%</span></div>';}).join('');
     }
-    se.innerHTML='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="font-size:13px;font-weight:600;color:#FAFAFA">'+(r.instrument||'')+' · '+(r.strategy||'Strategy')+'</div><div style="font-size:11px;color:#71717A;margin-top:2px">'+(r.start_date||'')+' → '+(r.end_date||'')+'</div></div>'+
+    se.innerHTML='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.06)"><div style="font-size:13px;font-weight:600;color:#FAFAFA">'+(r.instrument||'')+' · '+(r.strategy||'Strategy')+'</div><div style="font-size:11px;color:#71717A;margin-top:2px">'+(r.start_date||'')+' → '+(r.end_date||'')+'</div><div style="font-size:9px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3);color:#818CF8;border-radius:4px;padding:2px 6px;margin-top:6px;display:inline-block;font-weight:700">⚙️ SYNTHETIC BLACK-SCHOLES PRICING ACTIVE</div></div>'+
       rows.map(function(row){return'<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,.04)"><span style="color:#71717A">'+row[0]+'</span><span style="color:'+row[2]+';font-weight:500">'+row[1]+'</span></div>';}).join('')+dowHtml;
   }
   var te=document.getElementById('bt-trades-table');
@@ -2251,6 +2347,13 @@ function renderTicker(trades) {
     var dur = Math.max(20, Math.round(track.scrollWidth / 2 / 70));
     track.style.setProperty('--ticker-dur', dur + 's');
   });
+}
+
+async function logout() {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+  } catch (e) {}
+  window.location.href = '/';
 }
 
 // ════════════════════════════════════════════════════

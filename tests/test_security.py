@@ -80,13 +80,16 @@ def test_security_headers_present():
 
 def test_authenticated_request_passes(monkeypatch):
     """A valid session cookie gets past the gate (no 401)."""
-    token = auth.create_session()
+    import asyncio
+    from data.database import init_db
+    asyncio.run(init_db())
+    token = asyncio.run(auth.create_session())
     authed = TestClient(main.app, cookies={auth.COOKIE_NAME: token})
     try:
         r = authed.get("/api/status")
         assert r.status_code != 401
     finally:
-        auth.destroy_session(token)
+        asyncio.run(auth.destroy_session(token))
 
 
 def test_no_duplicate_route_registrations():
@@ -121,14 +124,16 @@ def test_production_refuses_missing_password():
 
 
 def test_production_requires_session_secret():
+    scrypt_pw = auth.hash_password("a-strong-password")
     with pytest.raises(RuntimeError):
-        auth.resolve_bot_password("a-strong-password", is_production=True,
+        auth.resolve_bot_password(scrypt_pw, is_production=True,
                                   session_secret_present=False)
 
 
 def test_production_accepts_strong_config():
-    assert auth.resolve_bot_password("a-strong-password", is_production=True,
-                                     session_secret_present=True) == "a-strong-password"
+    scrypt_pw = auth.hash_password("a-strong-password")
+    assert auth.resolve_bot_password(scrypt_pw, is_production=True,
+                                     session_secret_present=True) == scrypt_pw
 
 
 def test_development_allows_default():
@@ -144,3 +149,29 @@ def test_docs_disabled_flag_matches_env():
         assert main.app.docs_url is None and main.app.openapi_url is None
     else:
         assert main.app.docs_url == "/docs" and main.app.openapi_url == "/openapi.json"
+
+
+def test_endpoints_enforce_confirmation_phrases():
+    import asyncio
+    from data.database import init_db
+    asyncio.run(init_db())
+    token = asyncio.run(auth.create_session())
+    authed = TestClient(main.app, cookies={auth.COOKIE_NAME: token})
+    try:
+        # 1. Going live without GO LIVE returns 428
+        r = authed.post("/api/trading/set-mode", json={"mode": "live"})
+        assert r.status_code == 428
+
+        # Going live with incorrect phrase returns 428
+        r = authed.post("/api/trading/set-mode", json={"mode": "live", "confirm_phrase": "live"})
+        assert r.status_code == 428
+
+        # 2. Square off without SQUARE-OFF returns 422 or 428
+        r = authed.post("/api/override/square-off", json={})
+        assert r.status_code in (422, 428)
+
+        # Square off with incorrect phrase returns 428
+        r = authed.post("/api/override/square-off", json={"confirm_phrase": "close"})
+        assert r.status_code == 428
+    finally:
+        asyncio.run(auth.destroy_session(token))

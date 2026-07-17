@@ -262,7 +262,12 @@ class LiveTrader:
 
         except Exception as e:
             import traceback
-            print(f"[trader] tick error at {time_str}: {e}\n{traceback.format_exc()}")
+            err_msg = f"[trader] tick error at {time_str}: {e}\n{traceback.format_exc()}"
+            print(err_msg)
+            try:
+                await _send_telegram(f"❌ Core Market Loop Tick Crashed!\nError: {e}")
+            except Exception:
+                pass
 
         finally:
             store.ai_status = "in_trade" if store.positions else "waiting"
@@ -631,7 +636,8 @@ class LiveTrader:
 
             # Realistic entry: pay the ask (apply slippage)
             entry_quote = entry_price
-            entry_price = apply_slippage(entry_price, "buy")
+            vix_val = current_vix if isinstance(current_vix, (int, float)) and current_vix > 0 else 15.0
+            entry_price = apply_slippage(entry_price, "buy", vix=vix_val)
             log.info("Slippage", f"quoted={entry_quote} -> fill@ask={entry_price}",
                      quoted=entry_quote, fill=entry_price)
 
@@ -793,7 +799,9 @@ class LiveTrader:
 
         # Realistic exit: receive the bid (apply slippage), then charge full fee stack
         exit_quote = current_price
-        exit_fill  = apply_slippage(current_price, "sell") if not position.get("is_live") else current_price
+        vix_val = getattr(store, "india_vix", 15.0)
+        vix_val = vix_val if isinstance(vix_val, (int, float)) and vix_val > 0 else 15.0
+        exit_fill  = apply_slippage(current_price, "sell", vix=vix_val) if not position.get("is_live") else current_price
         breakdown  = realistic_pnl(position["entry"], exit_fill, position["quantity"])
         pnl_raw    = breakdown["pnl_raw"]
         pnl_final  = breakdown["pnl_final"]

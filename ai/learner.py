@@ -7,49 +7,67 @@ if TYPE_CHECKING:
 
 
 async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: dict, notify_fn=None):
-    trades = await db_get_trades(days=30, completed_only=True)
-    if len(trades) < 10:
-        print("[learner] Not enough trades for nightly review (need 10+).")
-        return
+    try:
+        trades = await db_get_trades(days=30, completed_only=True)
+        if len(trades) < 10:
+            print("[learner] Not enough trades for nightly review (need 10+).")
+            return
 
-    rules  = await agent.nightly_review(trades)
-    stats  = _calculate_stats(trades)
+        rules  = await agent.nightly_review(trades)
+        stats  = _calculate_stats(trades)
 
-    await db_save_rules(rules, stats)
+        await db_save_rules(rules, stats)
 
-    threshold = rules.get("updated_confidence_threshold")
-    if isinstance(threshold, int) and 6 <= threshold <= 9:
-        trading_cfg["min_confidence"] = threshold
-        print(f"[learner] Confidence threshold updated to {threshold}")
+        threshold = rules.get("updated_confidence_threshold")
+        if isinstance(threshold, int) and 6 <= threshold <= 9:
+            trading_cfg["min_confidence"] = threshold
+            print(f"[learner] Confidence threshold updated to {threshold}")
 
-    msg = (
-        f"🧠 Ragi Nightly Learn\n"
-        f"WR={stats['win_rate']:.1f}%  PnL=₹{stats['total_pnl']:,.0f}\n"
-        f"Insight: {rules.get('key_insight', 'N/A')}"
-    )
-    if notify_fn:
-        await notify_fn(msg)
-    print(f"[learner] {msg}")
+        msg = (
+            f"🧠 Ragi Nightly Learn\n"
+            f"WR={stats['win_rate']:.1f}%  PnL=₹{stats['total_pnl']:,.0f}\n"
+            f"Insight: {rules.get('key_insight', 'N/A')}"
+        )
+        if notify_fn:
+            await notify_fn(msg)
+        print(f"[learner] {msg}")
+    except Exception as e:
+        import traceback
+        print(f"[learner] Nightly review failed: {e}\n{traceback.format_exc()}")
+        if notify_fn:
+            try:
+                await notify_fn(f"⚠️ Nightly learning review failed:\nError: {e}")
+            except Exception:
+                pass
 
 
 async def weekly_review(agent, db_get_trades, notify_fn=None):
-    trades = await db_get_trades(days=90, completed_only=True)
-    if len(trades) < 20:
-        print("[learner] Not enough trades for weekly review.")
-        return
+    try:
+        trades = await db_get_trades(days=90, completed_only=True)
+        if len(trades) < 20:
+            print("[learner] Not enough trades for weekly review.")
+            return
 
-    stats = _calculate_stats(trades)
-    rules = await agent.nightly_review(trades)
+        stats = _calculate_stats(trades)
+        rules = await agent.nightly_review(trades)
 
-    msg = (
-        f"📊 Ragi Weekly Review (90 days)\n"
-        f"Trades={stats['total']}  WR={stats['win_rate']:.1f}%\n"
-        f"PnL=₹{stats['total_pnl']:,.0f}  Sharpe={stats['sharpe']:.2f}\n"
-        f"Key: {rules.get('key_insight', 'N/A')}"
-    )
-    if notify_fn:
-        await notify_fn(msg)
-    print(f"[learner] {msg}")
+        msg = (
+            f"📊 Ragi Weekly Review (90 days)\n"
+            f"Trades={stats['total']}  WR={stats['win_rate']:.1f}%\n"
+            f"PnL=₹{stats['total_pnl']:,.0f}  Sharpe={stats['sharpe']:.2f}\n"
+            f"Key: {rules.get('key_insight', 'N/A')}"
+        )
+        if notify_fn:
+            await notify_fn(msg)
+        print(f"[learner] {msg}")
+    except Exception as e:
+        import traceback
+        print(f"[learner] Weekly review failed: {e}\n{traceback.format_exc()}")
+        if notify_fn:
+            try:
+                await notify_fn(f"⚠️ Weekly review failed:\nError: {e}")
+            except Exception:
+                pass
 
 
 def _calculate_stats(trades: list) -> dict:
