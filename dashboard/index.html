@@ -651,7 +651,7 @@ button.hdr-badge {
       </div>
 
       <!-- ══════════ RIGHT PANEL ══════════ -->
-      <div style="border-left:1px solid rgba(255,255,255,.06);overflow-y:auto;background:#0A0A0D;flex-shrink:0">
+      <div class="right-panel" style="border-left:1px solid rgba(255,255,255,.06);overflow-y:auto;background:#0A0A0D;flex-shrink:0">
         <div style="padding:16px 14px">
 
           <!-- Header -->
@@ -822,6 +822,19 @@ button.hdr-badge {
 </div>
 
 <script>
+// ════════════════════════════════════════════════════
+//  401 INTERCEPTOR — must run first, before any fetch calls
+// ════════════════════════════════════════════════════
+(function(){
+  var _origFetch = window.fetch;
+  window.fetch = function() {
+    return _origFetch.apply(this, arguments).then(function(r) {
+      if (r.status === 401) { window.location.href = '/login'; }
+      return r;
+    });
+  };
+})();
+
 // ════════════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════════════
@@ -2385,19 +2398,6 @@ function onStrategyFilePicked(ev) {
   reader.readAsText(file);
   ev.target.value = '';
 }
-
-// ════════════════════════════════════════════════════
-//  401 INTERCEPTOR — redirect to login on session expiry
-// ════════════════════════════════════════════════════
-(function(){
-  var _origFetch = window.fetch;
-  window.fetch = function() {
-    return _origFetch.apply(this, arguments).then(function(r) {
-      if (r.status === 401) { window.location.href = '/login'; }
-      return r;
-    });
-  };
-})();
 
 // ════════════════════════════════════════════════════
 //  CHART AUTO-REFRESH fallback (every 60s if SSE stalls)
