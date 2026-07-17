@@ -339,7 +339,27 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
         # Expected if token lacks options subscription/permissions
         pass
 
-    # Option Chain Mock Fallback
+    # NSE Fallback — real option chain data from nseindia.com
+    try:
+        from data.nse import get_nse_client
+        nse_sym = "BANKNIFTY" if "Bank" in instrument_key else "NIFTY"
+        chain = get_nse_client().get_option_chain(nse_sym)
+        if chain and chain.get("pcr"):
+            days_to_exp = max(0, (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days)
+            return {
+                "pcr":         chain["pcr"],
+                "max_pain":    chain["max_pain"],
+                "atm_iv":      chain.get("atm_iv", 0),
+                "atm_ce_oi":   chain.get("atm_ce_oi", 0),
+                "atm_pe_oi":   chain.get("atm_pe_oi", 0),
+                "oi_change":   chain.get("oi_change", 0),
+                "days_to_exp": days_to_exp,
+                "source":      "nse",
+            }
+    except Exception as nse_err:
+        print(f"[historical] NSE option chain fallback failed: {nse_err}")
+
+    # Option Chain Mock Fallback (last resort)
     try:
         atm = round_to_atm(spot, step)
         days_to_exp = max(0, (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days)

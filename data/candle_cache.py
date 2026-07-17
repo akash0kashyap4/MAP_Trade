@@ -55,6 +55,40 @@ def save_candles(instrument_key: str, candles: list):
         conn.commit()
 
 
+async def bulk_insert_candles(candles: list[dict]) -> int:
+    """
+    Insert daily (or any interval) candles from NSE bhavcopy.
+    Each dict: {instrument, interval, timestamp, open, high, low, close, volume, oi}
+    Returns number of rows inserted.
+    """
+    if not candles:
+        return 0
+    rows = [
+        (c["instrument"], c["interval"], c["timestamp"],
+         float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"]),
+         int(c.get("volume") or 0), int(c.get("oi") or 0))
+        for c in candles
+        if c.get("close")
+    ]
+    if not rows:
+        return 0
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    def _insert():
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO candles "
+                "(instrument, interval, timestamp, open, high, low, close, volume, oi) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+            conn.commit()
+        return len(rows)
+
+    return await loop.run_in_executor(None, _insert)
+
+
 def get_candles(instrument_key: str, date_str: str) -> list:
     """Fetch cached 1-min candles for an instrument on a given date. Returns [] if not cached."""
     with sqlite3.connect(DB_PATH) as conn:

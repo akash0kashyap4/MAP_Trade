@@ -599,6 +599,31 @@ button.hdr-badge {
                 <div style="font-size:12px;color:#3F3F46">Loading…</div>
               </div>
             </div>
+
+            <!-- NSE Bhavcopy Import -->
+            <div class="card" style="border-radius:18px;padding:18px 20px;margin-top:10px">
+              <div style="font-size:9px;font-weight:700;color:#52525B;letter-spacing:.6px;margin-bottom:4px">NSE BHAVCOPY IMPORT</div>
+              <div style="font-size:11px;color:#71717A;margin-bottom:14px;line-height:1.5">Download daily OHLCV from NSE India and store in candle DB for backtesting.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+                <div>
+                  <div style="font-size:9px;color:#52525B;margin-bottom:4px">SYMBOL</div>
+                  <select id="bhav-symbol" style="width:120px">
+                    <option value="NIFTY">NIFTY</option>
+                    <option value="BANKNIFTY">BANKNIFTY</option>
+                  </select>
+                </div>
+                <div>
+                  <div style="font-size:9px;color:#52525B;margin-bottom:4px">FROM</div>
+                  <input type="date" id="bhav-from" value="2024-01-01" style="width:140px">
+                </div>
+                <div>
+                  <div style="font-size:9px;color:#52525B;margin-bottom:4px">TO</div>
+                  <input type="date" id="bhav-to" value="2024-12-31" style="width:140px">
+                </div>
+                <button class="btn btn-primary" onclick="startBhavImport()" id="bhav-btn">⬇ Import</button>
+              </div>
+              <div id="bhav-msg" style="font-size:11px;margin-top:10px;min-height:16px;color:#71717A"></div>
+            </div>
           </div>
 
           <!-- SECTION: Reports -->
@@ -711,6 +736,44 @@ button.hdr-badge {
                 <div><div style="font-size:9px;font-weight:600;color:#52525B;margin-bottom:2px">SENSEX</div><div id="ltp-SENSEX" style="font-size:15px;font-weight:700">──────</div></div>
                 <div id="chg-SENSEX" style="font-size:10px;color:#71717A;text-align:right">──</div>
               </div>
+            </div>
+          </div>
+
+          <!-- NSE Option Chain -->
+          <div class="card" style="border-radius:14px;padding:13px;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-size:9px;color:#52525B;font-weight:700;letter-spacing:.5px">NSE OPTION CHAIN</div>
+              <button onclick="refreshOptionChain()" style="background:none;border:1px solid rgba(99,102,241,.3);color:#818CF8;border-radius:6px;font-size:9px;padding:2px 7px;cursor:pointer;font-family:inherit">↻ LIVE</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:9px;color:#52525B;font-weight:600">PCR</span>
+                <span id="oc-pcr" style="font-size:13px;font-weight:700;color:#FAFAFA">──</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:9px;color:#52525B;font-weight:600">MAX PAIN</span>
+                <span id="oc-maxpain" style="font-size:13px;font-weight:700;color:#F59E0B">──</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:9px;color:#52525B;font-weight:600">ATM IV</span>
+                <span id="oc-iv" style="font-size:13px;font-weight:700;color:#818CF8">──</span>
+              </div>
+              <div style="height:1px;background:rgba(255,255,255,.04);margin:2px 0"></div>
+              <div style="display:flex;justify-content:space-between">
+                <div style="text-align:center">
+                  <div style="font-size:8px;color:#EF4444;font-weight:600;margin-bottom:2px">CE OI</div>
+                  <div id="oc-ce" style="font-size:10px;font-weight:600;color:#FAFAFA">──</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:8px;color:#22C55E;font-weight:600;margin-bottom:2px">PE OI</div>
+                  <div id="oc-pe" style="font-size:10px;font-weight:600;color:#FAFAFA">──</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:8px;color:#71717A;font-weight:600;margin-bottom:2px">SIGNAL</div>
+                  <div id="oc-signal" style="font-size:10px;font-weight:700;color:#F59E0B">──</div>
+                </div>
+              </div>
+              <div id="oc-expiry" style="font-size:9px;color:#3F3F46;text-align:center;margin-top:2px"></div>
             </div>
           </div>
 
@@ -999,6 +1062,7 @@ es.onmessage = function(e) {
   if (d.next_check)  { var nc=document.getElementById('next-check'); if(nc)nc.textContent=d.next_check; }
   if (d.india_vix && d.india_vix > 0) updateVix(d.india_vix);
   if (d.tick_count !== undefined) updateTick(d.tick_count);
+  if (d.option_chain && d.option_chain.pcr) _updateOptionChain(d.option_chain);
 
   // SSE sends candles as flat array (NIFTY only) and indicators as flat dict
   if (d.candles) {
@@ -2312,6 +2376,105 @@ function renderTicker(trades) {
     var dur = Math.max(20, Math.round(track.scrollWidth / 2 / 70));
     track.style.setProperty('--ticker-dur', dur + 's');
   });
+}
+
+// ════════════════════════════════════════════════════
+//  NSE OPTION CHAIN
+// ════════════════════════════════════════════════════
+function _updateOptionChain(oc) {
+  if (!oc || !oc.pcr) return;
+  var pcrEl = document.getElementById('oc-pcr');
+  var mpEl  = document.getElementById('oc-maxpain');
+  var ivEl  = document.getElementById('oc-iv');
+  var ceEl  = document.getElementById('oc-ce');
+  var peEl  = document.getElementById('oc-pe');
+  var sigEl = document.getElementById('oc-signal');
+  var expEl = document.getElementById('oc-expiry');
+
+  var pcr = parseFloat(oc.pcr) || 0;
+  if (pcrEl) {
+    pcrEl.textContent = pcr.toFixed(2);
+    pcrEl.style.color = pcr > 1.2 ? '#22C55E' : pcr < 0.8 ? '#EF4444' : '#F59E0B';
+  }
+  if (mpEl)  mpEl.textContent  = oc.max_pain ? oc.max_pain.toLocaleString('en-IN') : '──';
+  if (ivEl)  ivEl.textContent  = oc.atm_iv   ? oc.atm_iv + '%' : '──';
+  if (ceEl)  ceEl.textContent  = oc.ce_oi_total ? _fmtOI(oc.ce_oi_total) : '──';
+  if (peEl)  peEl.textContent  = oc.pe_oi_total ? _fmtOI(oc.pe_oi_total) : '──';
+  if (expEl) expEl.textContent = oc.nearest_expiry ? 'Expiry: ' + oc.nearest_expiry : '';
+  if (sigEl) {
+    var sig = pcr > 1.2 ? 'BULLISH' : pcr < 0.8 ? 'BEARISH' : 'NEUTRAL';
+    sigEl.textContent  = sig;
+    sigEl.style.color  = sig === 'BULLISH' ? '#22C55E' : sig === 'BEARISH' ? '#EF4444' : '#F59E0B';
+  }
+}
+function _fmtOI(n) {
+  if (n >= 1e7) return (n / 1e7).toFixed(1) + 'Cr';
+  if (n >= 1e5) return (n / 1e5).toFixed(1) + 'L';
+  return n.toLocaleString('en-IN');
+}
+async function refreshOptionChain() {
+  try {
+    var sym = 'NIFTY';
+    var r = await fetch('/api/nse/option-chain?symbol=' + sym);
+    var d = await r.json();
+    if (d.ok && d.data) _updateOptionChain(d.data);
+  } catch (e) { console.warn('[oc]', e); }
+}
+// Auto-refresh option chain every 3 min during market hours
+setInterval(function() {
+  var h = new Date().getHours(), m = new Date().getMinutes();
+  var mins = h * 60 + m;
+  if (mins >= 555 && mins <= 930) refreshOptionChain(); // 9:15 – 15:30 IST
+}, 180000);
+
+// ════════════════════════════════════════════════════
+//  NSE BHAVCOPY IMPORT
+// ════════════════════════════════════════════════════
+var _bhavPoll = null;
+async function startBhavImport() {
+  var sym  = document.getElementById('bhav-symbol')?.value || 'NIFTY';
+  var from = document.getElementById('bhav-from')?.value;
+  var to   = document.getElementById('bhav-to')?.value;
+  var msg  = document.getElementById('bhav-msg');
+  var btn  = document.getElementById('bhav-btn');
+  if (!from || !to) { if (msg) msg.textContent = 'Select date range.'; return; }
+  if (btn) btn.disabled = true;
+  if (msg) { msg.style.color = '#818CF8'; msg.textContent = 'Downloading from NSE…'; }
+  try {
+    var r = await fetch('/api/nse/bhavcopy/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: sym, from_date: from, to_date: to })
+    });
+    var d = await r.json();
+    if (!d.ok) {
+      if (msg) { msg.style.color='#EF4444'; msg.textContent = '✗ ' + d.detail; }
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (msg) msg.textContent = 'Import running…';
+    if (_bhavPoll) clearInterval(_bhavPoll);
+    _bhavPoll = setInterval(async function() {
+      try {
+        var sr = await fetch('/api/nse/bhavcopy/status?symbol=' + sym);
+        var st = await sr.json();
+        if (!st.running) {
+          clearInterval(_bhavPoll); _bhavPoll = null;
+          if (btn) btn.disabled = false;
+          if (st.error) {
+            if (msg) { msg.style.color='#EF4444'; msg.textContent = '✗ ' + st.error; }
+          } else {
+            if (msg) { msg.style.color='#22C55E'; msg.textContent = '✓ ' + st.inserted + ' daily candles imported for ' + sym; }
+          }
+        } else {
+          if (msg) msg.textContent = 'Downloading… (NSE session active)';
+        }
+      } catch(e) {}
+    }, 2500);
+  } catch(e) {
+    if (msg) { msg.style.color='#EF4444'; msg.textContent = 'Network error: ' + e.message; }
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ════════════════════════════════════════════════════

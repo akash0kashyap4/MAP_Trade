@@ -49,6 +49,9 @@ class LiveStore:
         # Today's news pulse (set by ai.news.NewsBrain.scan)
         self.news_insight: dict = {}
 
+        # Live NSE option chain snapshot (PCR, max pain, OI)
+        self.option_chain: dict = {}
+
     def set_prev_close(self, instrument: str, close: float):
         """Set yesterday's close — called once at startup."""
         info = self.prices.get(instrument)
@@ -195,8 +198,9 @@ class LiveStore:
             "next_check":   self.next_check_time,
             "last_tick":    self.last_tick_time,
             "tick_count":   self.tick_count,
-            "india_vix":    self.india_vix,
-            "news":         self.news_insight,
+            "india_vix":     self.india_vix,
+            "news":          self.news_insight,
+            "option_chain":  self.option_chain,
         }
 
 

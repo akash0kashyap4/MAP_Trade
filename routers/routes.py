@@ -1090,3 +1090,96 @@ async def ai_knowledge(limit: int = 60, category: Optional[str] = None):
 async def ai_suggestions():
     """Feature requests the AI brain has made for its own improvement."""
     return await db.get_ai_suggestions()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  NSE DATA
+# ═════════════════════════════════════════════════════════════════════════════
+
+@router.get("/nse/option-chain")
+async def nse_option_chain(symbol: str = "NIFTY"):
+    """Live option chain from NSE — PCR, Max Pain, ATM IV, OI."""
+    symbol = symbol.upper()
+    if symbol not in ("NIFTY", "BANKNIFTY"):
+        raise HTTPException(status_code=400, detail="symbol must be NIFTY or BANKNIFTY")
+    try:
+        from data.nse import get_nse_client
+        chain = get_nse_client().get_option_chain(symbol)
+        # Update live store so SSE picks it up
+        store.option_chain = chain
+        return {"ok": True, "data": chain}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class BhavImportRequest(BaseModel):
+    symbol: str = "NIFTY"
+    from_date: str    # YYYY-MM-DD
+    to_date: str      # YYYY-MM-DD
+
+
+@router.post("/nse/bhavcopy/import")
+async def nse_bhavcopy_import(req: BhavImportRequest, background_tasks: BackgroundTasks):
+    """
+    Download daily OHLCV from NSE and store as '1d' candles in the DB.
+    Runs in background — poll /api/nse/bhavcopy/status for progress.
+    """
+    symbol = req.symbol.upper()
+    if symbol not in ("NIFTY", "BANKNIFTY"):
+        raise HTTPException(status_code=400, detail="symbol must be NIFTY or BANKNIFTY")
+
+    from datetime import date as _date
+    try:
+        from_d = _date.fromisoformat(req.from_date)
+        to_d   = _date.fromisoformat(req.to_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Dates must be YYYY-MM-DD")
+
+    if (to_d - from_d).days > 365 * 5:
+        raise HTTPException(status_code=400, detail="Max range is 5 years per request")
+
+    _bhav_status[symbol] = {"running": True, "inserted": 0, "error": None}
+    background_tasks.add_task(_run_bhav_import, symbol, from_d, to_d)
+    return {"ok": True, "message": f"Import started for {symbol} {req.from_date} → {req.to_date}"}
+
+
+_bhav_status: dict = {}
+
+
+async def _run_bhav_import(symbol: str, from_d, to_d):
+    from datetime import timedelta
+    from data.nse import get_nse_client
+    from data.candle_cache import bulk_insert_candles
+
+    try:
+        nse    = get_nse_client()
+        rows   = await asyncio.get_event_loop().run_in_executor(
+            None, nse.get_index_history, symbol, from_d, to_d
+        )
+        candles = []
+        for r in rows:
+            if not r.get("close"):
+                continue
+            candles.append({
+                "instrument": symbol,
+                "interval":   "1d",
+                "timestamp":  r["date"] + "T15:30:00",
+                "open":       r["open"],
+                "high":       r["high"],
+                "low":        r["low"],
+                "close":      r["close"],
+                "volume":     r["volume"],
+                "oi":         0,
+            })
+        if candles:
+            await bulk_insert_candles(candles)
+        _bhav_status[symbol] = {"running": False, "inserted": len(candles), "error": None}
+        print(f"[nse.bhavcopy] {symbol}: {len(candles)} daily candles imported.")
+    except Exception as e:
+        _bhav_status[symbol] = {"running": False, "inserted": 0, "error": str(e)}
+        print(f"[nse.bhavcopy] import failed: {e}")
+
+
+@router.get("/nse/bhavcopy/status")
+async def nse_bhavcopy_status(symbol: str = "NIFTY"):
+    return _bhav_status.get(symbol.upper(), {"running": False, "inserted": 0, "error": None})
