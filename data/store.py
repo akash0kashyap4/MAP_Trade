@@ -49,6 +49,10 @@ class LiveStore:
         # Today's news pulse (set by ai.news.NewsBrain.scan)
         self.news_insight: dict = {}
 
+        # Live NSE option chain snapshot (PCR, max pain, OI)
+        self.option_chain: dict = {}
+
+        # Mock-data transparency flags (surfaced in the dashboard)
         self.using_mock_options: bool = False
         self.using_mock_chain: bool = False
 
@@ -205,8 +209,9 @@ class LiveStore:
             "next_check":   self.next_check_time,
             "last_tick":    self.last_tick_time,
             "tick_count":   self.tick_count,
-            "india_vix":    self.india_vix,
-            "news":         self.news_insight,
+            "india_vix":     self.india_vix,
+            "news":          self.news_insight,
+            "option_chain":  self.option_chain,
         }
 
 
