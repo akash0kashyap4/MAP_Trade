@@ -1,8 +1,13 @@
 import os
 from datetime import date
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Deployment target: "vps" (default) | "android" (Termux on mobile device).
+DEPLOYMENT_TARGET = os.getenv("DEPLOYMENT_TARGET", "vps").strip().lower()
+IS_ANDROID = DEPLOYMENT_TARGET == "android"
 
 # Deployment environment: "development" (default) | "production".
 # Production tightens security: API docs are disabled and default/weak
@@ -14,6 +19,13 @@ IS_PRODUCTION = ENV == "production"
 # (Copilot CLI), "ollama" (local), or a comma-separated fallback chain, e.g.
 # "claude_code,copilot,claude". Switch with AI_PROVIDER in .env — no code change.
 AI_PROVIDER = os.getenv("AI_PROVIDER", "claude").strip().lower()
+
+# Configurable directories for portable deployment
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.getenv("DATA_DIR", str(_REPO_ROOT / "data_store")))
+LOG_DIR = Path(os.getenv("LOG_DIR", str(_REPO_ROOT / "logs")))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
@@ -113,4 +125,13 @@ def is_market_day(d: date | None = None) -> bool:
     return d.weekday() < 5 and d not in NSE_HOLIDAYS
 
 REQUEST_DELAY = 0.35
-DB_PATH = os.getenv("DB_PATH", "trading_bot.db")
+DB_PATH = os.getenv("DB_PATH", str(DATA_DIR / "trading_bot.db"))
+
+# Web server binding — configurable for Android (direct access) vs VPS (behind nginx)
+APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
+APP_PORT = int(os.getenv("APP_PORT", "8000"))
+
+# Trading mode safety: default to paper trading. Live requires explicit config.
+TRADING_MODE = os.getenv("TRADING_MODE", "paper").strip().lower()
+if TRADING_MODE == "live":
+    TRADING["paper_trade"] = False

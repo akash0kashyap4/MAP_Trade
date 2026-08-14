@@ -126,6 +126,8 @@ async def start_feed():
         except Exception as e:
             print(f"[groww.feed] Poll error: {e}")
             store.feed_status = "error"
+            # On mobile networks, transient failures are common; back off briefly
+            await asyncio.sleep(5)
 
         await asyncio.sleep(10)  # 10s — yfinance is slower than REST
 

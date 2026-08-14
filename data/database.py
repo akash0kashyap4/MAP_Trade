@@ -20,6 +20,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 _USE_SQLITE   = not DATABASE_URL
 _SQLITE_PATH  = _DEFAULT_DB_PATH
 
+# Ensure the parent directory for the SQLite database file exists
+if _USE_SQLITE:
+    import pathlib
+    pathlib.Path(_SQLITE_PATH).parent.mkdir(parents=True, exist_ok=True)
+
 # ── SQLite DDL (? params, AUTOINCREMENT) ─────────────────────────────────────
 _SQLITE_DDL = """
 CREATE TABLE IF NOT EXISTS candles (
@@ -202,9 +207,10 @@ def _sqlite_conn():
     """Return an aiosqlite connection context — use `async with _sqlite_conn() as db`.
     Do NOT await it first: awaiting starts the worker thread, and entering the
     context manager afterwards starts it again ("threads can only be started
-    once" on aiosqlite >= 0.20), which broke every DB operation."""
+    once" on aiosqlite >= 0.20), which broke every DB operation.
+    timeout=30 prevents "database is locked" errors on resource-constrained devices."""
     import aiosqlite
-    return aiosqlite.connect(_SQLITE_PATH)
+    return aiosqlite.connect(_SQLITE_PATH, timeout=30)
 
 
 # ── Public init ───────────────────────────────────────────────────────────────
@@ -213,6 +219,9 @@ async def init_db():
     if _USE_SQLITE:
         try:
             async with _sqlite_conn() as db:
+                # WAL mode: better concurrent read/write, fewer locks on constrained devices
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute("PRAGMA busy_timeout=30000")
                 for stmt in _SQLITE_DDL.strip().split(";"):
                     s = stmt.strip()
                     if s:
