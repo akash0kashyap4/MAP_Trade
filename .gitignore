@@ -14,9 +14,14 @@ ENV/
 # Database
 *.db
 *.sqlite3
+data_store/
+!data_store/.gitkeep
 
 # Logs
 *.log
+
+# Android deployment runtime files
+deploy/android/pids/
 
 # IDE
 .vscode/

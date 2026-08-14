@@ -15,7 +15,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_LOG_DIR = _REPO_ROOT / "logs"
+_LOG_DIR = Path(os.getenv("LOG_DIR", str(_REPO_ROOT / "logs")))
 
 
 @dataclass(frozen=True)

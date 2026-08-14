@@ -1,7 +1,6 @@
 """
 RAGI -- Self-Learning Options Trading Bot
 Nifty / BankNifty / Sensex | Upstox API | Claude Code Brain
-Dashboard: http://localhost:8000
 """
 from __future__ import annotations
 import asyncio
@@ -99,6 +98,7 @@ async def lifespan(app: FastAPI):
     sched = setup_scheduler(trader, learner, news_brain=news_brain,
                             reporter=reporter, notify_fn=_send_telegram)
     sched.start()
+    app.state._scheduler = sched
     print("[main] Scheduler started (news 08:15/12:30 + daily report 15:45 wired)")
 
     asyncio.create_task(start_feed())
@@ -130,6 +130,9 @@ async def lifespan(app: FastAPI):
     app.state.agent      = agent
     app.state.news_brain = news_brain
     app.state.reporter   = reporter
+
+    from config import APP_HOST, APP_PORT
+    _print_startup_banner(APP_HOST, APP_PORT)
 
     yield
 
@@ -199,6 +202,64 @@ async def security_headers(request: Request, call_next):
 async def health():
     """Health check for load balancers and uptime monitors."""
     return {"status": "ok", "service": "ragi-bot"}
+
+
+@app.get("/health/detailed")
+async def health_detailed():
+    """Detailed health check for mobile monitoring — no auth required."""
+    from datetime import datetime
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(IST)
+
+    checks = {
+        "status": "ok",
+        "timestamp": now.isoformat(),
+        "deployment_target": os.getenv("DEPLOYMENT_TARGET", "vps"),
+        "trading_mode": store.trading_mode,
+        "bot_paused": store.bot_paused,
+        "feed_status": store.feed_status,
+        "ai_status": store.ai_status,
+        "positions_open": len(store.positions),
+        "last_tick": store.last_tick_time or "never",
+        "tick_count": store.tick_count,
+        "realized_pnl": round(store.realized_pnl, 2),
+        "cumulative_pnl": round(store.cumulative_pnl, 2),
+    }
+
+    # DB check
+    try:
+        from data.database import _USE_SQLITE, _SQLITE_PATH
+        if _USE_SQLITE:
+            import aiosqlite
+            async with aiosqlite.connect(_SQLITE_PATH, timeout=5) as db_conn:
+                async with db_conn.execute("SELECT 1") as cur:
+                    await cur.fetchone()
+            checks["db"] = "ok"
+        else:
+            checks["db"] = "postgres"
+    except Exception as e:
+        checks["db"] = f"error: {e}"
+        checks["status"] = "degraded"
+
+    # LLM check
+    try:
+        from ai.provider_registry import get_active_provider
+        provider = get_active_provider()
+        checks["llm_provider"] = provider.name
+        checks["llm_available"] = provider.health_check()
+    except Exception:
+        checks["llm_provider"] = "unknown"
+        checks["llm_available"] = False
+
+    # Scheduler check
+    try:
+        sched = getattr(app.state, "_scheduler", None)
+        checks["scheduler"] = "running" if sched and sched.running else "unknown"
+    except Exception:
+        checks["scheduler"] = "unknown"
+
+    return checks
 
 
 @app.get("/robots.txt")
@@ -321,5 +382,35 @@ async def dashboard(request: Request):
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+def _get_lan_ip() -> str:
+    """Best-effort LAN IP detection via UDP socket (no traffic sent)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+def _print_startup_banner(host: str, port: int) -> None:
+    lan_ip = _get_lan_ip()
+    print()
+    print("=" * 56)
+    print("  RAGI BOT — Self-Learning Options Trading Bot")
+    print("=" * 56)
+    print(f"  Server:    {host}:{port}")
+    print(f"  Dashboard: http://{lan_ip}:{port}")
+    print(f"  Health:    http://{lan_ip}:{port}/health")
+    print(f"  Detailed:  http://{lan_ip}:{port}/health/detailed")
+    print(f"  Mode:      {os.getenv('TRADING_MODE', 'paper').upper()}")
+    print("=" * 56)
+    print()
+
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    from config import APP_HOST, APP_PORT
+    _print_startup_banner(APP_HOST, APP_PORT)
+    uvicorn.run("main:app", host=APP_HOST, port=APP_PORT, reload=False)
