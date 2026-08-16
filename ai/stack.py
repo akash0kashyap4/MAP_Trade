@@ -113,10 +113,9 @@ def render_mplfinance(df: pd.DataFrame, symbol: str, out_path: Path) -> Path:
     import mplfinance as mpf
     plot_df = df.rename(columns=str.capitalize)
     apds = []
-    if "sma20" in df.columns:
-        apds.append(mpf.make_addplot(df["sma20"], color="#2b8"))
-    if "sma50" in df.columns:
-        apds.append(mpf.make_addplot(df["sma50"], color="#e83"))
+    for col, color in [("sma20", "#2b8"), ("sma50", "#e83")]:
+        if col in df.columns and df[col].notna().any():
+            apds.append(mpf.make_addplot(df[col], color=color))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     mpf.plot(
         plot_df, type="candle", volume=True, style="nightclouds",

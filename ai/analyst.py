@@ -81,10 +81,12 @@ def _format_report(symbol: str, bundle: dict, synthesis: str) -> str:
     stamp = bundle["as_of"]
 
     def _fmt_bt(row: dict) -> str:
+        if "error" in row:
+            return f"| _error_ | {row['error']} | | | | |"
         m = row.get("strategy_metrics", {})
         bh = row.get("buyhold_metrics", {})
         return (
-            f"| {row['strategy']} | {m.get('total_return_pct', 0)}% | "
+            f"| {row.get('strategy', '?')} | {m.get('total_return_pct', 0)}% | "
             f"{m.get('sharpe', 0)} | {m.get('max_drawdown_pct', 0)}% | "
             f"{m.get('trades', 0)} | vs B&H {bh.get('total_return_pct', 0)}% |"
         )

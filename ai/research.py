@@ -28,11 +28,13 @@ def _price_snapshot(symbol: str) -> dict:
         prev = hist.iloc[-2] if len(hist) > 1 else last
         high_52 = hist["High"].tail(252).max() if len(hist) > 20 else hist["High"].max()
         low_52 = hist["Low"].tail(252).min() if len(hist) > 20 else hist["Low"].min()
-        info = {}
+        mcap, curr = None, None
         try:
-            info = t.fast_info or {}
+            fi = t.fast_info
+            mcap = getattr(fi, "market_cap", None)
+            curr = getattr(fi, "currency", None)
         except Exception:
-            info = {}
+            pass
         return {
             "symbol": symbol,
             "close": round(float(last["Close"]), 2),
@@ -40,8 +42,8 @@ def _price_snapshot(symbol: str) -> dict:
             "volume": int(last["Volume"]),
             "high_range": round(float(high_52), 2),
             "low_range": round(float(low_52), 2),
-            "market_cap": int(info.get("market_cap") or 0) or None,
-            "currency": info.get("currency"),
+            "market_cap": int(mcap) if mcap else None,
+            "currency": curr,
         }
     except Exception as e:
         return {"error": f"yfinance: {e}"}

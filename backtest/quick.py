@@ -30,18 +30,18 @@ def _signal_rsi_meanrev(df: pd.DataFrame, length: int = 14, buy: int = 30, sell:
     loss = -delta.clip(upper=0).rolling(length).mean()
     rs = gain / loss.replace(0, np.nan)
     rsi = 100 - 100 / (1 + rs)
-    pos = pd.Series(0, index=df.index)
+    out = []
     holding = 0
-    for i, r in enumerate(rsi):
+    for r in rsi:
         if pd.isna(r):
-            pos.iloc[i] = 0
+            out.append(0)
             continue
         if holding == 0 and r < buy:
             holding = 1
         elif holding == 1 and r > sell:
             holding = 0
-        pos.iloc[i] = holding
-    return pos
+        out.append(holding)
+    return pd.Series(out, index=df.index)
 
 
 def _signal_momentum(df: pd.DataFrame, lookback: int = 60) -> pd.Series:
