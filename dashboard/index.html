@@ -356,7 +356,7 @@ button.hdr-badge {
     <!-- TOP BAR -->
     <div style="display:flex;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(9,9,11,.95);gap:14px;flex-shrink:0;z-index:10">
       <!-- Hamburger (mobile only) -->
-      <button id="hamburger" onclick="openSidebar()" style="display:none;width:32px;height:32px;border:none;background:transparent;cursor:pointer;align-items:center;justify-content:center;border-radius:8px;color:#A1A1AA;padding:0">
+      <button id="hamburger" onclick="openSidebar()" aria-label="Open navigation menu" title="Menu" style="display:none;width:32px;height:32px;border:none;background:transparent;cursor:pointer;align-items:center;justify-content:center;border-radius:8px;color:#A1A1AA;padding:0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <span id="page-title" style="font-size:15px;font-weight:600">Dashboard</span>
@@ -394,7 +394,7 @@ button.hdr-badge {
       <button class="hdr-badge paper" id="mode-btn" onclick="requestModeSwitch()" title="Click to switch trading mode" aria-live="polite">● PAPER MODE</button>
 
       <!-- Logout -->
-      <button onclick="logout()" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0" title="Logout">R</button>
+      <button onclick="logout()" aria-label="Logout" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0" title="Logout">R</button>
     </div>
 
     <!-- CONTENT ROW -->
@@ -882,7 +882,7 @@ button.hdr-badge {
   <div style="background:#111318;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:13px;font-weight:600" id="dl-title">Decision Log</div>
-      <button onclick="document.getElementById('dl-modal').style.display='none'" style="background:none;border:none;color:#71717A;cursor:pointer;font-size:18px;padding:0 4px;line-height:1">×</button>
+      <button onclick="document.getElementById('dl-modal').style.display='none'" aria-label="Close" title="Close" style="background:none;border:none;color:#71717A;cursor:pointer;font-size:18px;padding:0 4px;line-height:1">×</button>
     </div>
     <div id="dl-content"></div>
   </div>
