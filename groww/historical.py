@@ -396,6 +396,74 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
     return {}
 
 
+def get_option_chain_rows(instrument_key: str, spot: float, expiry: str, step: int) -> dict:
+    """Full per-strike option chain from Groww for the dashboard table.
+
+    Mirrors data.nse.NSEClient.get_option_chain_rows so the dashboard can use
+    either source with one shape: {spot, atm, expiry, pcr, max_pain, atm_iv,
+    rows:[{strike, ce, pe}]}. Used for SENSEX (not on NSE's index chain) and
+    as a Groww-first path for Nifty/BankNifty. Returns {} on any failure so
+    the caller can fall back to NSE or mock cleanly."""
+    try:
+        groww = get_groww_client()
+        exchange, _, symbol = _INSTRUMENT_MAP.get(
+            instrument_key, (_EXCHANGE_NSE, _SEGMENT_FNO, instrument_key.split("|")[-1])
+        )
+        clean_symbol = symbol.replace(" ", "")
+        chain_data = groww.get_option_chain(
+            exchange=exchange, underlying=clean_symbol, expiry_date=expiry,
+        )
+        contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
+        if not contracts:
+            return {}
+
+        atm = round_to_atm(spot, step)
+
+        def _leg(opt: dict) -> dict:
+            ltp = float(opt.get("ltp", opt.get("lastPrice", 0)) or 0)
+            vol = float(opt.get("volume", opt.get("traded_volume", 0)) or 0)
+            return {
+                "ltp":      ltp,
+                "oi":       float(opt.get("open_interest", opt.get("openInterest", 0)) or 0),
+                "chg_oi":   float(opt.get("oi_change", opt.get("changeinOpenInterest", 0)) or 0),
+                "iv":       float(opt.get("implied_volatility", opt.get("impliedVolatility", 0)) or 0),
+                "volume":   vol,
+                "turnover": ltp * vol,
+                "bid":      float(opt.get("bid_price", opt.get("bidprice", 0)) or 0),
+                "ask":      float(opt.get("ask_price", opt.get("askPrice", 0)) or 0),
+            }
+
+        rows: list[dict] = []
+        ce_oi_total = pe_oi_total = 0.0
+        pain_map: dict[int, float] = {}
+        atm_iv = 0.0
+        for row in contracts:
+            strike = int(row.get("strike_price", row.get("strikePrice", 0)) or 0)
+            if not strike:
+                continue
+            ce = row.get("call_options", row.get("callOptions", {})) or {}
+            pe = row.get("put_options",  row.get("putOptions",  {})) or {}
+            ce_leg = _leg(ce) if ce else {}
+            pe_leg = _leg(pe) if pe else {}
+            rows.append({"strike": strike, "ce": ce_leg, "pe": pe_leg})
+            ce_oi_total += ce_leg.get("oi", 0)
+            pe_oi_total += pe_leg.get("oi", 0)
+            pain_map[strike] = pain_map.get(strike, 0) + ce_leg.get("oi", 0) + pe_leg.get("oi", 0)
+            if strike == atm:
+                atm_iv = ce_leg.get("iv", 0) or pe_leg.get("iv", 0)
+
+        rows.sort(key=lambda r: r["strike"])
+        pcr      = round(pe_oi_total / ce_oi_total, 3) if ce_oi_total > 0 else None
+        max_pain = max(pain_map, key=pain_map.get) if pain_map else atm
+        return {
+            "spot": spot, "atm": atm, "expiry": expiry,
+            "pcr": pcr, "pcr_volume": None, "max_pain": max_pain,
+            "atm_iv": round(atm_iv, 2), "rows": rows,
+        }
+    except Exception:
+        return {}
+
+
 def get_live_option_from_chain(
     instrument_key: str,
     spot: float,

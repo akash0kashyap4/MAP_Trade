@@ -415,6 +415,26 @@ async def insert_trade(trade: dict) -> int:
 
 # ── update_trade_exit ─────────────────────────────────────────────────────────
 
+async def update_trade_quantity(trade_db_id: int, quantity: int):
+    """Adjust an open trade's recorded quantity. Used when a position is
+    partially booked: the parent row becomes the 'runner' (reduced qty) and a
+    separate closed row records the booked half, so neither row double-counts."""
+    if _USE_SQLITE:
+        try:
+            async with _sqlite_conn() as db:
+                await db.execute("UPDATE trades SET quantity=? WHERE id=?", (quantity, trade_db_id))
+                await db.commit()
+        except Exception as e:
+            log.warning("[update_trade_quantity] SQLite error: %s", e)
+    else:
+        try:
+            pool = await _pg_pool()
+            async with pool.acquire() as db:
+                await db.execute("UPDATE trades SET quantity=$1 WHERE id=$2", quantity, trade_db_id)
+        except Exception as e:
+            log.warning("[update_trade_quantity] PG error: %s", e)
+
+
 async def update_trade_exit(trade_db_id: int, exit_time: str, exit_price: float,
                             exit_reason: str, pnl_raw: float, pnl_final: float,
                             fees_total: float | None = None, slippage_cost: float | None = None):

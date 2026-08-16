@@ -398,9 +398,17 @@ async function refreshChain(){
   $('#expiryLabel').textContent = 'Expiry ' + (d.expiry || '—');
   renderChain();
 }
+function chainStep(){
+  // Derive real strike spacing from the data (NIFTY 50, BankNifty/Sensex 100)
+  // instead of hardcoding — robust to any instrument's actual ladder.
+  const strikes = chainRows.map(r => r.strike).filter(s => typeof s === 'number').sort((a,b)=>a-b);
+  let step = Infinity;
+  for(let i=1;i<strikes.length;i++){ const d = strikes[i]-strikes[i-1]; if(d>0 && d<step) step = d; }
+  return isFinite(step) ? step : (selectedInstr === 'NIFTY' ? 50 : 100);
+}
 function renderChain(){
   if(!chainRows.length){ $('#chainBody').innerHTML = '<tr><td colspan="9" class="chain-empty">No rows in chain snapshot.</td></tr>'; return; }
-  const step = selectedInstr === 'SENSEX' ? 100 : 50;
+  const step = chainStep();
   const shown = chainRange > 0
     ? chainRows.filter(r => Math.abs(r.strike - atmStrike) <= chainRange * step)
     : chainRows;
@@ -542,7 +550,7 @@ async function placeOrder(){
     sl_premium: sl, target_premium: tgt, expiry: currentExpiry,
   };
   try{
-    const r = await fetch('/api/paper/order', {
+    const r = await fetch('/api/dashboard/paper/order', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body),
@@ -557,7 +565,7 @@ async function placeOrder(){
 
 /* ── Positions ─────────────────────────────────────────── */
 async function refreshPositions(){
-  const p = await api('/api/paper/positions');
+  const p = await api('/api/dashboard/paper/positions');
   const list = p?.positions || [];
   $('#posCount').textContent = list.length + ' open';
   if(!list.length){ $('#posBody').innerHTML = '<div class="chain-empty" style="padding:40px">No open positions.</div>'; return; }
@@ -576,7 +584,7 @@ async function refreshPositions(){
     }).join('') + '</tbody></table>';
 }
 async function exitPaper(id){
-  await fetch('/api/paper/exit/' + id, {method:'POST', credentials:'same-origin'});
+  await fetch('/api/dashboard/paper/exit/' + id, {method:'POST', credentials:'same-origin'});
   refreshPositions();
 }
 

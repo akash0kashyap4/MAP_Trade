@@ -182,7 +182,7 @@ class LiveTrader:
         store.premarket_bias = plan
         store.ai_status = "waiting"
         print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
-        await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
+        await _send_telegram(f"📊 MAP TRADE Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
         self._market_open = True
 
     def _check_market_open(self) -> bool:
@@ -354,7 +354,7 @@ class LiveTrader:
                 failed.append(label)
                 print(f"[trader] EMERGENCY square-off FAILED for {label}: {e}")
 
-        msg = f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
+        msg = f"[MAP TRADE] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
         if failed:
             msg += (f"\n⚠️ FAILED to close {len(failed)}: {', '.join(failed)} — "
                     "CHECK YOUR BROKER TERMINAL MANUALLY.")
@@ -913,16 +913,22 @@ class LiveTrader:
         store.cumulative_pnl += pnl_final
 
         # Shrink the live position to the remainder, tighten SL to breakeven so
-        # the "runner" is now a free trade.
+        # the "runner" is now a free trade. Flag is set BEFORE any await so the
+        # concurrent sl_monitor / tick loops can never double-book the same
+        # position (cooperative scheduling only yields at awaits).
         position["quantity"]       = keep_qty
         position["partial_booked"] = True
         if position.get("sl", 0) < entry:
             position["sl"] = round(float(entry), 2)
 
-        # Record the partial as a fresh trade row (so P&L accounting stays
-        # consistent) rather than mutating the parent trade.
+        # Keep DB rows internally consistent: the parent trade row becomes the
+        # runner (quantity reduced to keep_qty, still open); a separate CLOSED
+        # row records the booked half. Neither row double-counts quantity.
         exit_time = datetime.now(IST).isoformat()
         try:
+            parent_id = position.get("trade_db_id")
+            if parent_id:
+                await db.update_trade_quantity(parent_id, keep_qty)
             await db.insert_trade({
                 "trade_type":   "paper" if not position.get("is_live") else "live",
                 "instrument":   position["instrument"],
@@ -937,6 +943,8 @@ class LiveTrader:
                 "quantity":     book_qty,
                 "pnl_raw":      pnl_raw,
                 "pnl_final":    pnl_final,
+                "fees_total":   fees_total,
+                "slippage_cost": slippage_cost,
                 "signal_id":    position.get("signal_id"),
             })
         except Exception as e:
@@ -1059,7 +1067,7 @@ class LiveTrader:
         summary = store.get_daily_summary()
         print(f"[trader] EOD Summary: {summary}")
         await _send_telegram(
-            f"📈 Ragi EOD\n"
+            f"📈 MAP TRADE EOD\n"
             f"P&L=₹{summary['total']:,.0f}  Positions={summary['positions']}"
         )
         store.reset_daily()
@@ -1067,4 +1075,6 @@ class LiveTrader:
         self._recent_entries = []
         self._market_open = False
         self._daily_loss_breaker_hit = False
+        self._profit_lock_engaged = False   # reset daily — else next day pins SLs at open
         self._expiries_cache = {}
+        self._vix_cache = (0.0, 0.0)        # force a fresh VIX read tomorrow

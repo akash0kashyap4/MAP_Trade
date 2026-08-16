@@ -193,9 +193,9 @@ async def groww_health():
     """Ping Groww API and return connection status."""
     result = check_api_connection()
     if result["ok"]:
-        send_telegram("[Ragi] Groww API health check OK.")
+        send_telegram("[MAP TRADE] Groww API health check OK.")
     else:
-        send_telegram(f"[Ragi] Groww API health check FAILED: {result['message']}")
+        send_telegram(f"[MAP TRADE] Groww API health check FAILED: {result['message']}")
     return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
@@ -970,7 +970,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
     print(msg)
     try:
-        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[Ragi] {msg}")
+        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[MAP TRADE] {msg}")
     except Exception:
         pass
 

@@ -167,7 +167,7 @@ class _DBProxy:
 
 
 app = FastAPI(
-    title="Ragi Trading Bot",
+    title="MAP TRADE Bot",
     lifespan=lifespan,
     # In production the interactive docs and raw schema are disabled so the
     # private API surface (incl. trading-control endpoints) is not published.

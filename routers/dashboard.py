@@ -17,10 +17,11 @@ from config import INSTRUMENTS, LOT_SIZES, TRADING
 from data import database as db
 from data.store import store
 from groww.historical import (
-    get_option_chain_analytics,
+    get_option_chain_rows,
     round_to_atm,
 )
 from pydantic import BaseModel, Field
+import time
 import uuid
 
 
@@ -31,8 +32,86 @@ import uuid
 # these are training exercises, not track record.
 _paper_book: dict[str, dict] = {}
 
+# ── Chain snapshot cache ───────────────────────────────────────────────────
+# One fetch feeds chain-pulse, option-chain AND market-activity, so we cache
+# per instrument with a short TTL instead of hammering NSE/Groww 3x per poll.
+_chain_cache: dict[str, tuple[float, dict]] = {}   # instrument -> (epoch, snapshot)
+_CHAIN_TTL = 20.0
+
 IST = pytz.timezone("Asia/Kolkata")
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard-v2"])
+
+
+def _fetch_chain_snapshot_blocking(instrument: str) -> dict:
+    """Blocking fetch of a full per-strike chain snapshot for `instrument`.
+
+    NSE carries NIFTY/BANKNIFTY index chains (richest per-strike data); SENSEX
+    lives on BSE so it comes from Groww. Each source is tried and the other is
+    used as fallback. Returns {} if nothing is reachable — callers degrade to
+    an empty-but-valid shape so the UI never breaks."""
+    price_info = store.prices.get(instrument)
+    spot = float(price_info.ltp) if price_info else 0.0
+    step = 100 if instrument == "SENSEX" else 50
+
+    def _via_nse() -> dict:
+        try:
+            from data.nse import get_nse_client
+            return get_nse_client().get_option_chain_rows(instrument) or {}
+        except Exception:
+            return {}
+
+    def _via_groww() -> dict:
+        if not spot:
+            return {}
+        from datetime import date as _d, timedelta as _td
+        for days_ahead in range(0, 8):
+            expiry = (_d.today() + _td(days=days_ahead)).strftime("%Y-%m-%d")
+            snap = get_option_chain_rows(INSTRUMENTS[instrument], spot, expiry, step)
+            if snap and snap.get("rows"):
+                return snap
+        return {}
+
+    snap: dict = {}
+    if instrument in ("NIFTY", "BANKNIFTY"):
+        snap = _via_nse() or _via_groww()
+    else:  # SENSEX
+        snap = _via_groww() or _via_nse()
+
+    if snap and not snap.get("spot") and spot:
+        snap["spot"] = spot
+    if snap and not snap.get("atm"):
+        snap["atm"] = round_to_atm(snap.get("spot") or spot, step) if (snap.get("spot") or spot) else 0
+    return snap or {}
+
+
+def _days_to_expiry(expiry) -> Optional[int]:
+    """Days from today to an expiry string. Handles NSE's 'DD-Mon-YYYY' and
+    Groww's ISO 'YYYY-MM-DD'. Returns None if unparseable."""
+    if not expiry or not isinstance(expiry, str):
+        return None
+    for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            d = datetime.strptime(expiry, fmt).date()
+            return max(0, (d - datetime.now(IST).date()).days)
+        except ValueError:
+            continue
+    return None
+
+
+async def _chain_snapshot(instrument: str) -> dict:
+    """Cached async wrapper around the blocking chain fetch."""
+    now = time.time()
+    hit = _chain_cache.get(instrument)
+    if hit and (now - hit[0]) < _CHAIN_TTL:
+        return hit[1]
+    snap = await asyncio.get_running_loop().run_in_executor(
+        None, _fetch_chain_snapshot_blocking, instrument
+    )
+    if snap:
+        _chain_cache[instrument] = (now, snap)
+        return snap
+    # Serve stale on failure rather than an empty table.
+    return hit[1] if hit else {}
 
 
 # ── Chain pulse ────────────────────────────────────────────────────────────
@@ -44,33 +123,14 @@ async def chain_pulse(instrument: str):
     if instrument not in INSTRUMENTS:
         raise HTTPException(status_code=404, detail=f"unknown instrument {instrument}")
 
-    price_info = store.prices.get(instrument)
-    spot = float(price_info.ltp) if price_info else 0.0
     step = 100 if instrument == "SENSEX" else 50
-    atm = round_to_atm(spot, step) if spot else 0
+    snap = await _chain_snapshot(instrument)
+    spot = float(snap.get("spot") or (store.prices.get(instrument).ltp if store.prices.get(instrument) else 0) or 0)
+    atm  = snap.get("atm") or (round_to_atm(spot, step) if spot else 0)
+    rows = snap.get("rows") or []
+    days_to_exp = _days_to_expiry(snap.get("expiry"))
 
-    chain = store.option_chain.get(instrument, {}) if isinstance(store.option_chain, dict) else {}
-    analytics = chain.get("analytics") if isinstance(chain.get("analytics"), dict) else chain
-    rows = chain.get("rows") or []
-
-    # If store has nothing cached yet, try a live pull against the current
-    # weekly expiry (the trader tick usually populates this within a minute).
-    if not analytics and spot:
-        from datetime import date as _d, timedelta as _td
-        for days_ahead in range(0, 8):
-            expiry = (_d.today() + _td(days=days_ahead)).strftime("%Y-%m-%d")
-            try:
-                analytics = await asyncio.get_running_loop().run_in_executor(
-                    None, get_option_chain_analytics,
-                    INSTRUMENTS[instrument], spot, expiry, step,
-                )
-                if analytics:
-                    break
-            except Exception:
-                continue
-    analytics = analytics or {}
-
-    # Roll a Calls-vs-Puts turnover split off whatever rows we have.
+    # Roll a Calls-vs-Puts turnover split off the per-strike rows.
     calls_turnover = puts_turnover = 0.0
     call_oi_chg = put_oi_chg = 0.0
     ivs_call: list[float] = []
@@ -82,16 +142,16 @@ async def chain_pulse(instrument: str):
         if isinstance(strike, (int, float)):
             calls_turnover += float(ce.get("turnover", 0) or 0)
             puts_turnover  += float(pe.get("turnover", 0) or 0)
-            call_oi_chg    += float(ce.get("chg_oi", ce.get("oi_change", 0)) or 0)
-            put_oi_chg     += float(pe.get("chg_oi", pe.get("oi_change", 0)) or 0)
-            if abs(strike - atm) <= step * 3:
+            call_oi_chg    += float(ce.get("chg_oi", 0) or 0)
+            put_oi_chg     += float(pe.get("chg_oi", 0) or 0)
+            if atm and abs(strike - atm) <= step * 3:
                 if ce.get("iv"): ivs_call.append(float(ce["iv"]))
                 if pe.get("iv"): ivs_put.append(float(pe["iv"]))
 
     total_turnover = calls_turnover + puts_turnover
     calls_share = round(calls_turnover / total_turnover * 100, 1) if total_turnover else 50.0
 
-    pcr_oi = analytics.get("pcr")
+    pcr_oi = snap.get("pcr")
     iv_skew = None
     if ivs_call and ivs_put:
         iv_skew = round(sum(ivs_call)/len(ivs_call) - sum(ivs_put)/len(ivs_put), 2)
@@ -111,10 +171,10 @@ async def chain_pulse(instrument: str):
         "bias":           bias,
         "writer_note":    writer_note,
         "pcr_oi":         pcr_oi,
-        "pcr_volume":     analytics.get("pcr_volume"),
-        "atm_iv":         analytics.get("atm_iv"),
+        "pcr_volume":     snap.get("pcr_volume"),
+        "atm_iv":         snap.get("atm_iv"),
         "iv_skew":        iv_skew,
-        "max_pain":       analytics.get("max_pain"),
+        "max_pain":       snap.get("max_pain"),
         "call_oi_chg":    call_oi_chg,
         "put_oi_chg":     put_oi_chg,
         "turnover":       total_turnover,
@@ -122,7 +182,8 @@ async def chain_pulse(instrument: str):
         "puts_turnover":  puts_turnover,
         "calls_share":    calls_share,
         "puts_share":     round(100 - calls_share, 1),
-        "days_to_exp":    analytics.get("days_to_exp"),
+        "days_to_exp":    days_to_exp,
+        "expiry":         snap.get("expiry"),
     }
 
 
@@ -136,22 +197,26 @@ async def market_activity(instrument: str, tab: str = "most_traded", limit: int 
         raise HTTPException(status_code=404, detail=f"unknown instrument {instrument}")
     limit = max(1, min(limit, 20))
 
-    chain = store.option_chain.get(instrument, {}) if isinstance(store.option_chain, dict) else {}
-    rows = chain.get("rows") or []
+    snap = await _chain_snapshot(instrument)
+    rows = snap.get("rows") or []
     flat: list[dict] = []
     for r in rows:
         strike = r.get("strike")
         for opt_type, opt in (("CE", r.get("ce") or {}), ("PE", r.get("pe") or {})):
             if not opt:
                 continue
+            oi = float(opt.get("oi", 0) or 0)
+            chg_oi = float(opt.get("chg_oi", 0) or 0)
+            prev_oi = oi - chg_oi
+            chg_pct = (chg_oi / prev_oi * 100) if prev_oi > 0 else 0.0
             flat.append({
                 "strike":     strike,
                 "type":       opt_type,
                 "ltp":        opt.get("ltp"),
                 "turnover":   float(opt.get("turnover", 0) or 0),
-                "oi":         float(opt.get("oi", 0) or 0),
-                "chg_oi":     float(opt.get("chg_oi", opt.get("oi_change", 0)) or 0),
-                "chg_pct":    float(opt.get("chg_pct", 0) or 0),
+                "oi":         oi,
+                "chg_oi":     chg_oi,
+                "chg_pct":    round(chg_pct, 2),
             })
 
     if tab == "top_gainers":
@@ -295,41 +360,19 @@ async def option_chain(instrument: str):
     if instrument not in INSTRUMENTS:
         raise HTTPException(status_code=404, detail=f"unknown instrument {instrument}")
 
-    price_info = store.prices.get(instrument)
-    spot = float(price_info.ltp) if price_info else 0.0
     step = 100 if instrument == "SENSEX" else 50
-    atm = round_to_atm(spot, step) if spot else 0
-
-    chain = store.option_chain.get(instrument, {}) if isinstance(store.option_chain, dict) else {}
-    rows = chain.get("rows") or []
-    analytics = chain.get("analytics") or {}
-    expiry = chain.get("expiry") or ""
-
-    # Trigger a live fetch of the current-week analytics if store is empty; the
-    # tick loop will normally populate rows within a minute.
-    if not analytics and spot:
-        from datetime import date as _d, timedelta as _td
-        for days_ahead in range(0, 8):
-            candidate = (_d.today() + _td(days=days_ahead)).strftime("%Y-%m-%d")
-            try:
-                analytics = await asyncio.get_running_loop().run_in_executor(
-                    None, get_option_chain_analytics,
-                    INSTRUMENTS[instrument], spot, candidate, step,
-                )
-                if analytics:
-                    expiry = expiry or candidate
-                    break
-            except Exception:
-                continue
+    snap = await _chain_snapshot(instrument)
+    spot = float(snap.get("spot") or (store.prices.get(instrument).ltp if store.prices.get(instrument) else 0) or 0)
+    atm  = snap.get("atm") or (round_to_atm(spot, step) if spot else 0)
 
     return {
         "instrument": instrument,
         "spot":       spot,
         "atm":        atm,
-        "expiry":     expiry,
-        "pcr":        analytics.get("pcr"),
-        "max_pain":   analytics.get("max_pain"),
-        "rows":       rows,
+        "expiry":     snap.get("expiry") or "",
+        "pcr":        snap.get("pcr"),
+        "max_pain":   snap.get("max_pain"),
+        "rows":       snap.get("rows") or [],
     }
 
 

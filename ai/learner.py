@@ -21,7 +21,7 @@ async def run_nightly_review(agent, db_get_trades, db_save_rules, trading_cfg: d
         apply_rules_to_config(rules, trading_cfg)
 
         msg = (
-            f"🧠 Ragi Nightly Learn\n"
+            f"🧠 MAP TRADE Nightly Learn\n"
             f"WR={stats['win_rate']:.1f}%  PnL=₹{stats['total_pnl']:,.0f}\n"
             f"Insight: {rules.get('key_insight', 'N/A')}"
         )
@@ -49,7 +49,7 @@ async def weekly_review(agent, db_get_trades, notify_fn=None):
         rules = await agent.nightly_review(trades)
 
         msg = (
-            f"📊 Ragi Weekly Review (90 days)\n"
+            f"📊 MAP TRADE Weekly Review (90 days)\n"
             f"Trades={stats['total']}  WR={stats['win_rate']:.1f}%\n"
             f"PnL=₹{stats['total_pnl']:,.0f}  Sharpe={stats['sharpe']:.2f}\n"
             f"Key: {rules.get('key_insight', 'N/A')}"

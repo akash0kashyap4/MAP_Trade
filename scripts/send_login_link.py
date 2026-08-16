@@ -34,7 +34,7 @@ def main() -> int:
     result = check_api_connection()
     if result["ok"]:
         msg = (
-            f"Good morning. Ragi is ready.\n"
+            f"Good morning. MAP TRADE is ready.\n"
             f"Groww API: Connected\n"
             f"Dashboard: https://akash.mehakva.com\n"
             f"Time: {datetime.now().strftime('%H:%M IST')}"
