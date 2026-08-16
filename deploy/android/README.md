@@ -20,7 +20,7 @@ Motorola Moto G51 5G (or any Android device with Termux)
 ```bash
 # 1. Clone the repository
 pkg install git
-git clone https://github.com/akash0kashyap4/ragi_bot.git ~/Ragi_bot
+git clone https://github.com/akash0kashyap4/MAP_Trade.git ~/MAP_Trade
 cd ~/Ragi_bot
 
 # 2. Run the installer
