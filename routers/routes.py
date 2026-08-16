@@ -1302,3 +1302,28 @@ async def _run_bhav_import(symbol: str, from_d, to_d):
 @router.get("/nse/bhavcopy/status")
 async def nse_bhavcopy_status(symbol: str = "NIFTY"):
     return _bhav_status.get(symbol.upper(), {"running": False, "inserted": 0, "error": None})
+
+
+@router.get("/analyst/{symbol}")
+async def analyst(symbol: str, period: str = "1y", interval: str = "1d", llm: bool = False):
+    """Ragi Analyst — one-shot best-quality analysis for a symbol.
+
+    Returns markdown report + chart paths. Set llm=true to include Claude synthesis.
+    """
+    from ai.analyst import analyze
+    agent = None
+    if llm:
+        try:
+            from ai.agent import TradingAgent
+            agent = TradingAgent()
+        except Exception as e:
+            return JSONResponse({"error": f"llm init: {e}"}, status_code=500)
+    result = await analyze(symbol, agent=agent, period=period, interval=interval)
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return {
+        "symbol": result["symbol"],
+        "report_md": result["report_md"],
+        "report_path": result["report_path"],
+        "chart_paths": result["chart_paths"],
+    }
