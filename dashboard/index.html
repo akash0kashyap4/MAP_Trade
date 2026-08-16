@@ -2037,6 +2037,11 @@ function esc(s) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
 }
+// Only allow http(s) links from external feeds — blocks javascript:/data: URLs.
+function safeUrl(u) {
+  u = String(u ?? '').trim();
+  return /^https?:\/\//i.test(u) ? u : '';
+}
 
 function pnlColor(v) {
   return (v||0) >= 0 ? '#22C55E' : '#EF4444';
@@ -2287,10 +2292,11 @@ async function loadNewsPulse() {
     itEl.innerHTML = items.length ? `<div class="rpt-card">
       <div class="rpt-h" style="margin-top:0">RAW HEADLINES <span class="news-count">${items.length}</span></div>
       ${items.map(function(n) {
+        var url = safeUrl(n.url);
         return `<div class="news-headline">
           <span class="news-src">${esc(n.source || '—')}</span>
-          <span class="rpt-text">${n.url
-            ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="news-link">${esc(n.headline)}</a>`
+          <span class="rpt-text">${url
+            ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="news-link">${esc(n.headline)}</a>`
             : esc(n.headline)}</span>
         </div>`;
       }).join('')}
