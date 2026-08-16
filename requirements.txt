@@ -20,3 +20,6 @@ growwapi
 smartapi-python
 pyotp
 openpyxl
+pandas-ta>=0.3.14b
+plotly>=5.20.0
+mplfinance>=0.12.10b0
