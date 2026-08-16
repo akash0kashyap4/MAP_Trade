@@ -88,6 +88,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[main] WARNING: Could not load P&L from DB: {e}")
 
+    # Apply any rules the learner has persisted from previous nightly reviews
+    # BEFORE the agent starts serving decisions. Otherwise every fresh boot
+    # ignores the last N days of learning and starts from stock defaults.
+    try:
+        from ai.learner import load_persisted_rules
+        from data.database import get_latest_rules
+        from config import TRADING
+        _applied = await load_persisted_rules(get_latest_rules, TRADING)
+        if _applied:
+            print(f"[main] Learner rules applied at boot: {_applied}")
+    except Exception as e:
+        print(f"[main] WARNING: Could not apply learned rules at boot: {e}")
+
     agent      = TradingAgent()
     trader     = LiveTrader(agent)
     learner    = Learner(agent, _DBProxy())

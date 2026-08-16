@@ -396,11 +396,25 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
     return {}
 
 
-def get_live_option_from_chain(instrument_key: str, spot: float, option_type: str, step: int) -> dict:
+def get_live_option_from_chain(
+    instrument_key: str,
+    spot: float,
+    option_type: str,
+    step: int,
+    strike_offset: int = 0,
+    expiry_pref: str = "current",
+) -> dict:
     """
-    Find the ATM option for a given instrument/type and return LTP + metadata.
-    Falls back to a realistic mock option pricing model (Black-Scholes approximation)
-    if Groww API access to option chains is restricted/forbidden.
+    Find an option for a given instrument/type and return LTP + metadata.
+
+    strike_offset: 0 = ATM, negative = ITM (below spot for CE / above for PE),
+                   positive = OTM. Applied in units of `step`.
+    expiry_pref:   "current" = nearest available weekly (default).
+                   "next"    = SKIP the nearest and use the following weekly
+                               (lower theta for Mon/Tue swing entries).
+
+    Falls back to a mock Black-Scholes-like pricing model if Groww's option
+    chain endpoint is unavailable.
     """
     try:
         groww = get_groww_client()
@@ -408,9 +422,16 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
             instrument_key, (_EXCHANGE_NSE, _SEGMENT_FNO, instrument_key.split("|")[-1])
         )
         clean_symbol = symbol.replace(" ", "")
-        atm_strike = round_to_atm(spot, step)
+        base_strike = round_to_atm(spot, step)
+        # ITM for CE = strike below spot; ITM for PE = strike above spot.
+        if option_type == "CE":
+            target_strike = base_strike + int(strike_offset) * step
+        else:
+            target_strike = base_strike - int(strike_offset) * step
 
-        for days_ahead in range(0, 8):
+        # Collect valid expiry dates in order, then pick per expiry_pref.
+        found_expiries: list[str] = []
+        for days_ahead in range(0, 15):
             expiry_date = (date.today() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
             try:
                 chain_data = groww.get_option_chain(
@@ -421,11 +442,39 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
                 contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
                 if not contracts:
                     continue
+                found_expiries.append(expiry_date)
+            except Exception:
+                continue
+
+        ordered_expiries: list[str]
+        if expiry_pref == "next" and len(found_expiries) >= 2:
+            # prefer the second-nearest, but fall back to nearest if 2nd fetch fails
+            ordered_expiries = [found_expiries[1], found_expiries[0]] + found_expiries[2:]
+        else:
+            ordered_expiries = found_expiries
+
+        for expiry_date in ordered_expiries:
+            try:
+                chain_data = groww.get_option_chain(
+                    exchange=exchange,
+                    underlying=clean_symbol,
+                    expiry_date=expiry_date,
+                )
+                contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
+                if not contracts:
+                    continue
+
+                # First try the requested strike; if not present, fall back to ATM.
+                atm_strike = base_strike
+                strike_candidates = [target_strike]
+                if target_strike != atm_strike:
+                    strike_candidates.append(atm_strike)
 
                 for row in contracts:
                     strike = int(row.get("strike_price", row.get("strikePrice", 0)))
-                    if strike != atm_strike:
+                    if strike not in strike_candidates:
                         continue
+                    atm_strike = strike  # reused as return value below
 
                     key = "call_options" if option_type == "CE" else "put_options"
                     alt_key = "callOptions" if option_type == "CE" else "putOptions"

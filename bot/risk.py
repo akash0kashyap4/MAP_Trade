@@ -12,6 +12,26 @@ def calc_quantity(instrument: str, lots: int = None) -> int:
     return LOT_SIZES.get(instrument, 75) * lots
 
 
+def lots_from_confidence(confidence: int) -> int:
+    """Map AI confidence to a lot multiplier.
+
+    Uses TRADING['size_scaling'] = {conf_ceiling: lots, ...}, e.g.
+    {6: 1, 8: 2, 10: 3} means confidence 1-6 -> 1 lot, 7-8 -> 2 lots,
+    9-10 -> 3 lots. Confidence 0 always returns the base lot count."""
+    base = TRADING.get("lots", 1) or 1
+    if not confidence or confidence <= 0:
+        return base
+    scaling = TRADING.get("size_scaling") or {}
+    if not scaling:
+        return base
+    for ceiling in sorted(scaling):
+        if confidence <= ceiling:
+            return max(base, int(scaling[ceiling]))
+    # confidence above the highest key -> use the top bucket
+    top = scaling[max(scaling)]
+    return max(base, int(top))
+
+
 def calc_sl_price(entry: float, sl_rs: float, quantity: int) -> float:
     sl_pts = sl_rs / quantity
     return round(entry - sl_pts, 2)
@@ -50,10 +70,10 @@ async def check_risk_limits(instrument: str, action: str, entry_price: float, sl
     
     Returns (allowed, reason, adjusted_quantity).
     """
-    # 1. Session Profit Lock check
-    profit_lock = TRADING.get("session_profit_lock", 0)
-    if profit_lock > 0 and store.realized_pnl >= profit_lock:
-        return False, f"Session profit lock triggered (Realized: ₹{store.realized_pnl:.2f} >= Limit: ₹{profit_lock})", quantity
+    # 1. Session Profit Lock — DOES NOT block new entries anymore. The trader
+    # loop uses this signal separately to tighten open-position SLs to breakeven
+    # (protect gains). Blocking entries once profit was hit was leaving hours of
+    # trading dead every time we had a good morning.
 
     # Fetch today's trades for frequency and cooldown checks
     today_trades = await db.get_today_trades()

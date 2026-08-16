@@ -20,6 +20,14 @@ class DecisionSchema(BaseModel):
     target_premium: Optional[float] = None
     risk_reward: Optional[float] = None
 
+    # -1 = one strike ITM (higher delta), 0 = ATM, +1 = one strike OTM (cheaper).
+    # AI picks it — clamped to [-2, +2] to avoid deep-ITM/OTM disasters.
+    strike_offset: int = Field(default=0, ge=-2, le=2)
+
+    # "current" = nearest weekly (default, high theta), "next" = following week
+    # (lower theta, better for Mon/Tue swing buys).
+    expiry_pref: Literal["current", "next"] = "current"
+
     @field_validator("action", mode="before")
     @classmethod
     def normalize_action(cls, v):
@@ -52,7 +60,10 @@ class PremarketSchema(BaseModel):
 
 
 class TrailingSLSchema(BaseModel):
-    action: Literal["HOLD", "MOVE_SL", "EXIT"] = "HOLD"
+    # CUT_EARLY = exit losing/breakeven position because thesis is invalidated
+    # (structure flipped, opposite BOS, momentum stalled). Distinct from EXIT
+    # which is used when a profitable trade has run its course.
+    action: Literal["HOLD", "MOVE_SL", "EXIT", "CUT_EARLY"] = "HOLD"
     new_sl: Optional[float] = None
     reason: str = ""
 

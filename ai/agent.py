@@ -244,8 +244,31 @@ class TradingAgent:
         pnl     = (current_price - entry) * qty
         pnl_pct = ((current_price - entry) / entry * 100) if entry > 0 else 0.0
 
+        # Give the AI enough context to justify CUT_EARLY on a losing trade:
+        # the recent 5m spot structure of the underlying instrument. Without it
+        # the trailing brain can only see premium moves and would rarely have
+        # grounds to cut early — which is exactly the failure mode we're fixing.
+        from data.store import store as _store
+        instr = position.get("instrument", "")
+        ps_snap = ""
+        try:
+            candles = (_store.today_candles.get(instr) or [])[-6:]
+            if candles:
+                ps_snap = "\n".join(
+                    f"  {str(c[0])[11:19]}  O={float(c[1]):.1f} H={float(c[2]):.1f} "
+                    f"L={float(c[3]):.1f} C={float(c[4]):.1f}"
+                    for c in candles
+                )
+        except Exception:
+            ps_snap = ""
+        if not ps_snap:
+            ps_snap = "  (no recent candles cached)"
+
+        profit_state = "IN PROFIT" if current_price > entry else (
+            "AT BREAKEVEN" if abs(current_price - entry) < 0.5 else "IN LOSS")
+
         user_msg = TRAILING_SL_USER.format(
-            instrument=position.get("instrument", ""),
+            instrument=instr,
             strike=position.get("strike", ""),
             option_type=position.get("type", ""),
             entry=entry,
@@ -254,6 +277,9 @@ class TradingAgent:
             pnl=pnl,
             pnl_pct=pnl_pct,
             time=_now_ist(),
+            profit_state=profit_state,
+            context_note=f"{instr} last 6 x 5-min bars",
+            context_snapshot=ps_snap,
         )
 
         raw = await self._ask(TRAILING_SL_SYSTEM, user_msg)

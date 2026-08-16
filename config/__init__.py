@@ -57,25 +57,39 @@ LOT_SIZES = {"NIFTY": 65, "BANKNIFTY": 30, "SENSEX": 20}
 INITIAL_CAPITAL = 100_000   # ₹1 lakh dummy capital
 
 TRADING = {
-    "lots":            1,
+    "lots":            1,      # base lot multiplier; AI can up-size (see size_scaling)
     "paper_trade":     True,   # False = live trading via AngelOne
-    "max_positions":   2,      # max concurrent live positions (safety)
-    "max_daily_loss":  5000,   # hard safety brake — blocks new orders when hit
+    "max_positions":   3,      # max concurrent live positions (safety) — was 2
+    "max_daily_loss":  5000,   # hard safety brake — only real hard block
     # Fallback SL/TP used ONLY if AI omits sl_premium / target_premium.
-    "fallback_sl_pct":     0.30,   # 30% below entry
-    "fallback_target_pct": 0.60,   # 60% above entry
+    "fallback_sl_pct":     0.30,
+    "fallback_target_pct": 0.60,
     "stop_loss_rs":    500,    # fallback for backtests
     "target_rs":       1000,   # fallback for backtests
-    "min_confidence":  1,      # kept for schema compat — trust AI's own conf
-    "trailing_sl_trigger": 0.40,   # move SL to cost when profit hits 40% of target
-    "trailing_sl_step":    0.20,   # trail SL by 20% of premium each step
-    
-    # Advanced Risk Management Settings (Enabled by default)
-    "max_risk_per_trade":        2000,   # Max ₹ risk/loss per trade (e.g. 2000)
-    "max_trades_per_symbol":     3,      # Max trades per symbol per day (e.g. 3)
-    "consecutive_loss_limit":    2,      # Max consecutive losses before cooldown (e.g. 2)
-    "cooldown_duration_minutes": 120,    # Loss cooldown duration in minutes
-    "session_profit_lock":       8000,   # Stop entries if daily P&L >= this (e.g. 8000)
+    "min_confidence":  1,      # trust AI's own conf; may be overridden by learner
+    "trailing_sl_trigger": 0.40,
+    "trailing_sl_step":    0.20,
+
+    # ─── Risk management (softened so bot actually trades) ───────────────
+    "max_risk_per_trade":        2500,   # Max ₹ risk per trade (resizes qty, doesn't block)
+    "max_trades_per_symbol":     5,      # was 3 — allow more re-entries per index
+    "consecutive_loss_limit":    3,      # was 2
+    "cooldown_duration_minutes": 60,     # was 120 — halved so bot resumes faster
+    # Session profit lock: does NOT block entries anymore — it tightens all
+    # open positions' SL to breakeven so gains are protected while the bot
+    # can keep hunting new setups.
+    "session_profit_lock":       8000,
+
+    # ─── Confidence-based position sizing ────────────────────────────────
+    # AI confidence -> lot multiplier. High conviction gets scaled up.
+    # 1-6 = 1×, 7-8 = 2×, 9-10 = 3×. Set to None to disable.
+    "size_scaling": {6: 1, 8: 2, 10: 3},
+
+    # ─── Partial booking (needs qty >= 2*lot to fire) ────────────────────
+    # When ltp reaches entry + partial_book_ratio * (target - entry), book half
+    # the position and move SL to breakeven. Rest rides for full target.
+    "partial_book_enabled": True,
+    "partial_book_ratio":   0.60,   # book half at 60% of the way to target
 }
 
 SCHEDULE = {
