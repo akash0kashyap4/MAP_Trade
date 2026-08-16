@@ -20,6 +20,16 @@ from groww.historical import (
     get_option_chain_analytics,
     round_to_atm,
 )
+from pydantic import BaseModel, Field
+import uuid
+
+
+# ── In-memory paper-trade book ─────────────────────────────────────────────
+# The AI trader has its own persistent position tracking; the manual paper
+# trade console gets a lightweight parallel book so an operator can practice
+# trades without touching the bot's positions or DB rows. Restarts wipe it —
+# these are training exercises, not track record.
+_paper_book: dict[str, dict] = {}
 
 IST = pytz.timezone("Asia/Kolkata")
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard-v2"])
@@ -272,6 +282,137 @@ async def portfolio_stats(days: int = 90):
         "max_dd":     round(max_dd, 2),
         "charges":    charges,
     }
+
+
+# ── Full option chain (paper-trade table) ──────────────────────────────────
+@router.get("/option-chain/{instrument}")
+async def option_chain(instrument: str):
+    """Full option chain rows for the paper-trade table view. Returns the
+    per-strike CE/PE ladder plus the spot, ATM, expiry and headline PCR /
+    max-pain so the paper dashboard can render the whole PaperTrade-style
+    grid in one call."""
+    instrument = instrument.upper()
+    if instrument not in INSTRUMENTS:
+        raise HTTPException(status_code=404, detail=f"unknown instrument {instrument}")
+
+    price_info = store.prices.get(instrument)
+    spot = float(price_info.ltp) if price_info else 0.0
+    step = 100 if instrument == "SENSEX" else 50
+    atm = round_to_atm(spot, step) if spot else 0
+
+    chain = store.option_chain.get(instrument, {}) if isinstance(store.option_chain, dict) else {}
+    rows = chain.get("rows") or []
+    analytics = chain.get("analytics") or {}
+    expiry = chain.get("expiry") or ""
+
+    # Trigger a live fetch of the current-week analytics if store is empty; the
+    # tick loop will normally populate rows within a minute.
+    if not analytics and spot:
+        from datetime import date as _d, timedelta as _td
+        for days_ahead in range(0, 8):
+            candidate = (_d.today() + _td(days=days_ahead)).strftime("%Y-%m-%d")
+            try:
+                analytics = await asyncio.get_running_loop().run_in_executor(
+                    None, get_option_chain_analytics,
+                    INSTRUMENTS[instrument], spot, candidate, step,
+                )
+                if analytics:
+                    expiry = expiry or candidate
+                    break
+            except Exception:
+                continue
+
+    return {
+        "instrument": instrument,
+        "spot":       spot,
+        "atm":        atm,
+        "expiry":     expiry,
+        "pcr":        analytics.get("pcr"),
+        "max_pain":   analytics.get("max_pain"),
+        "rows":       rows,
+    }
+
+
+# ── Paper-trade order book (manual) ────────────────────────────────────────
+class PaperOrder(BaseModel):
+    instrument:     str
+    strike:         int
+    type:           str = Field(pattern=r"^(CE|PE)$")
+    side:           str = Field(pattern=r"^(BUY|SELL)$", default="BUY")
+    order_type:     str = Field(pattern=r"^(MARKET|LIMIT)$", default="MARKET")
+    lots:           int = Field(ge=1, le=99, default=1)
+    ltp:            float = 0.0
+    sl_premium:     Optional[float] = None
+    target_premium: Optional[float] = None
+    expiry:         Optional[str] = None
+
+
+@router.post("/paper/order")
+async def paper_order(order: PaperOrder):
+    """Accept a manual paper-trade order into the in-memory book. Fills at the
+    supplied LTP (paper), returns the order id for the client to display.
+    Note: this is NOT the AI trader's flow — it stays isolated so manual
+    experiments cannot pollute the bot's stats."""
+    instrument = order.instrument.upper()
+    if instrument not in INSTRUMENTS:
+        raise HTTPException(status_code=400, detail="unknown instrument")
+    lot = LOT_SIZES.get(instrument, 65)
+    quantity = order.lots * lot
+    fill_price = float(order.ltp or 0)
+    if fill_price <= 0:
+        raise HTTPException(status_code=422, detail="ltp must be positive for paper fill")
+
+    oid = uuid.uuid4().hex[:12]
+    now = datetime.now(IST).isoformat()
+    _paper_book[oid] = {
+        "id":         oid,
+        "instrument": instrument,
+        "strike":     order.strike,
+        "type":       order.type,
+        "side":       order.side,
+        "order_type": order.order_type,
+        "expiry":     order.expiry,
+        "quantity":   quantity,
+        "lots":       order.lots,
+        "entry":      round(fill_price, 2),
+        "ltp":        round(fill_price, 2),
+        "pnl":        0.0,
+        "sl":         order.sl_premium,
+        "target":     order.target_premium,
+        "entry_time": now,
+        "status":     "OPEN",
+    }
+    return {"order_id": oid, "status": "filled", "fill_price": fill_price, "quantity": quantity}
+
+
+@router.get("/paper/positions")
+async def paper_positions():
+    """Live paper-trade positions with LTP refreshed from the shared price
+    feed where available."""
+    for pos in _paper_book.values():
+        if pos["status"] != "OPEN":
+            continue
+        # Best-effort mark-to-market off whatever the trader loop cached.
+        key = f"{pos['instrument']}_{pos['strike']}_{pos['type']}"
+        latest = store.option_prices.get(key)
+        if latest:
+            pos["ltp"] = round(float(latest), 2)
+            direction = 1 if pos["side"] == "BUY" else -1
+            pos["pnl"] = round((pos["ltp"] - pos["entry"]) * pos["quantity"] * direction, 2)
+    open_positions = [p for p in _paper_book.values() if p["status"] == "OPEN"]
+    return {"count": len(open_positions), "positions": open_positions}
+
+
+@router.post("/paper/exit/{order_id}")
+async def paper_exit(order_id: str):
+    pos = _paper_book.get(order_id)
+    if not pos or pos["status"] != "OPEN":
+        raise HTTPException(status_code=404, detail="no such open paper order")
+    pos["status"]    = "CLOSED"
+    pos["exit_time"] = datetime.now(IST).isoformat()
+    pos["exit_price"]= pos["ltp"]
+    return {"order_id": order_id, "status": "closed",
+            "exit_price": pos["ltp"], "pnl": pos["pnl"]}
 
 
 # ── Strategy library (mirrors PaperTrade's Strategies page) ────────────────

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAP TRADE · Console</title>
+<style>
+:root{
+  --bg:#f2f4f1; --panel:#ffffff; --ink:#0b0f0d; --mute:#6b7570;
+  --line:#e6e9e5; --pill:#ecf1eb;
+  --pos:#1a8e3f; --pos-soft:#e6f4ea; --brand:#0e7c3a; --brand-soft:#dff0e3;
+  --info:#3562c2; --info-soft:#e2ebfa;
+  --shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  --radius:16px;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,'Helvetica Neue',Arial,sans-serif;
+  --mono:'JetBrains Mono','SFMono-Regular',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1210; --panel:#171b18; --ink:#e9ede9; --mute:#8b948e;
+    --line:#232824; --pill:#1e2320; --pos-soft:#12321e; --brand-soft:#123321;
+    --info-soft:#152443;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1210; --panel:#171b18; --ink:#e9ede9; --mute:#8b948e;
+  --line:#232824; --pill:#1e2320; --pos-soft:#12321e; --brand-soft:#123321;
+  --info-soft:#152443;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--sans);min-height:100vh}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+
+.top{display:flex;align-items:center;padding:16px 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:800;font-size:18px;letter-spacing:-.5px}
+.brand em{font-style:normal;color:var(--brand);margin:0 6px}
+.brand span{color:var(--mute);font-weight:500;font-size:13px;margin-left:8px}
+.right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:16px;background:var(--pill);color:var(--mute);font-size:12px;font-family:var(--mono)}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:var(--pos)}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+
+.wrap{max-width:1100px;margin:0 auto;padding:60px 24px 40px}
+.hero{text-align:center;margin-bottom:48px}
+.hero h1{margin:0 0 12px;font-size:44px;letter-spacing:-1px;font-weight:800;line-height:1.05}
+.hero h1 span{color:var(--brand)}
+.hero p{margin:0;color:var(--mute);font-size:16px;max-width:640px;margin:0 auto;line-height:1.5}
+
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media (max-width:820px){.cards{grid-template-columns:1fr}.wrap{padding:32px 20px}.hero h1{font-size:32px}}
+
+.card{background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow);padding:32px;position:relative;overflow:hidden;transition:transform .15s ease, box-shadow .15s ease;display:flex;flex-direction:column;min-height:360px;cursor:pointer;border:1px solid transparent}
+.card:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(0,0,0,.06), 0 20px 40px rgba(0,0,0,.10);border-color:var(--line)}
+.card .stripe{position:absolute;left:0;top:0;bottom:0;width:6px}
+.card.paper .stripe{background:linear-gradient(180deg,var(--info),#7ba0e6)}
+.card.ai    .stripe{background:linear-gradient(180deg,var(--brand),#5ec684)}
+
+.card .kicker{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.card h2{margin:8px 0 6px;font-size:26px;font-weight:700;letter-spacing:-.4px;display:flex;align-items:center;gap:10px}
+.card h2 .badge{font-size:10px;padding:3px 8px;border-radius:8px;font-weight:600;letter-spacing:.06em}
+.card.paper h2 .badge{background:var(--info-soft);color:var(--info)}
+.card.ai    h2 .badge{background:var(--pos-soft);color:var(--pos)}
+.card .desc{color:var(--mute);font-size:14px;line-height:1.55;margin:0 0 20px}
+
+.feats{list-style:none;padding:0;margin:0 0 24px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--ink)}
+.feats li{display:flex;align-items:flex-start;gap:10px;line-height:1.5}
+.feats li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--brand);flex-shrink:0;margin-top:8px}
+.card.paper .feats li::before{background:var(--info)}
+
+.stats{display:flex;gap:16px;padding:14px 16px;background:var(--pill);border-radius:10px;margin-bottom:20px;font-family:var(--mono);font-size:11px}
+.stats .s{flex:1}
+.stats .s .k{color:var(--mute);text-transform:uppercase;letter-spacing:.06em;font-size:9px}
+.stats .s .v{font-weight:700;font-size:14px;margin-top:2px}
+
+.enter{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-radius:12px;font-weight:600;font-size:14px;background:var(--brand-soft);color:var(--brand);letter-spacing:.02em}
+.card.paper .enter{background:var(--info-soft);color:var(--info)}
+.enter .arrow{transition:transform .15s ease;font-size:18px}
+.card:hover .enter .arrow{transform:translateX(4px)}
+
+.foot{text-align:center;color:var(--mute);font-size:11px;padding:32px 0;letter-spacing:.02em}
+.foot a{color:var(--brand)}
+
+.tools{display:flex;justify-content:center;gap:8px;margin-top:24px}
+.tool{padding:8px 14px;border-radius:20px;background:var(--panel);color:var(--mute);font-size:12px;border:1px solid var(--line)}
+.tool:hover{color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand">MAP<em>·</em>TRADE<span>Console</span></div>
+  <div class="right">
+    <span class="chip" id="marketPill"><span class="dot"></span>Market <span id="marketState">—</span></span>
+    <span class="chip" id="equityChip">Equity <b id="equityVal" style="color:var(--ink);margin-left:4px">₹—</b></span>
+    <button class="chip" onclick="toggleTheme()" title="Theme">◐ Theme</button>
+    <div class="avatar" id="userAvatar">AK</div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section class="hero">
+    <h1>Choose your <span>trading mode</span></h1>
+    <p>MAP TRADE gives you two ways to work the Indian index options markets — a hands-on paper terminal and a fully autonomous AI trader. Pick one to enter; you can switch any time.</p>
+  </section>
+
+  <div class="cards">
+
+    <!-- Paper Trade card -->
+    <a class="card paper" href="/dashboard/v2/paper">
+      <span class="stripe"></span>
+      <div class="kicker">Manual · Learn by doing</div>
+      <h2>Paper Trade Dashboard <span class="badge">HANDS-ON</span></h2>
+      <p class="desc">Practice on the live Nifty / Bank Nifty / Sensex option chain with real market data and virtual money. You place every order — the console tracks P&amp;L, fees and margin so you feel a real broker without risking a rupee.</p>
+      <ul class="feats">
+        <li>Full option chain with OI heatmap, IV, chg-OI, LTP · click a strike to trade</li>
+        <li>BUY/SELL, MARKET/LIMIT, lot stepper, SL &amp; target inputs</li>
+        <li>Chain pulse: PCR, IV skew, max pain, calls-vs-puts split</li>
+        <li>Strategy library — 12 multi-leg templates to explore</li>
+        <li>Portfolio, day-wise P&amp;L heatmap, win-rate stats</li>
+      </ul>
+      <div class="stats">
+        <div class="s"><div class="k">Signals</div><div class="v">You</div></div>
+        <div class="s"><div class="k">Orders</div><div class="v">Manual</div></div>
+        <div class="s"><div class="k">Capital</div><div class="v">Virtual</div></div>
+      </div>
+      <div class="enter">Open paper trade console <span class="arrow">→</span></div>
+    </a>
+
+    <!-- AI Trader card -->
+    <a class="card ai" href="/dashboard/v2/ai">
+      <span class="stripe"></span>
+      <div class="kicker">Autonomous · 24/7 bot</div>
+      <h2>MAP TRADE AI Trader <span class="badge">LIVE BOT</span></h2>
+      <p class="desc">Claude-powered options bot that watches Nifty / BN / Sensex every 5 min, picks direction, strike, expiry and sizing on its own, manages open positions (trail, cut early, partial book) and learns from every trade overnight.</p>
+      <ul class="feats">
+        <li>Live AI decision trail — every tick's reasoning is visible</li>
+        <li>Open positions with SL→Target progress + kill switch</li>
+        <li>Chain pulse, market activity, news pulse and knowledge feed</li>
+        <li>Equity curve, day-wise P&amp;L heatmap, learned rules panel</li>
+        <li>Bot controls: pause, entries toggle, mode switch, square-off</li>
+      </ul>
+      <div class="stats">
+        <div class="s"><div class="k">Signals</div><div class="v">AI</div></div>
+        <div class="s"><div class="k">Orders</div><div class="v">Auto</div></div>
+        <div class="s"><div class="k">Mode</div><div class="v" id="botMode">PAPER</div></div>
+      </div>
+      <div class="enter">Enter AI trader console <span class="arrow">→</span></div>
+    </a>
+
+  </div>
+
+  <div class="tools">
+    <a class="tool" href="/dashboard">Legacy dashboard</a>
+    <a class="tool" href="/health/detailed">Runtime health</a>
+    <a class="tool" href="/api/status">Status JSON</a>
+  </div>
+</div>
+
+<div class="foot">
+  MAP TRADE Console · Autonomous + manual options trading on Indian indices ·
+  Not a broker · Not investment advice.
+</div>
+
+<script>
+async function hydrate(){
+  try{
+    const r = await fetch('/api/status', {credentials:'same-origin'});
+    if(!r.ok) return;
+    const p = await r.json();
+    const eq = p.capital?.current;
+    if(eq != null) document.getElementById('equityVal').textContent = '₹' + Number(eq).toLocaleString('en-IN', {maximumFractionDigits:0});
+    document.getElementById('botMode').textContent = (p.trading_mode || 'paper').toUpperCase();
+    document.getElementById('marketState').textContent = p.feed_status === 'live' ? 'LIVE' : (p.bot_paused ? 'PAUSED' : 'IDLE');
+  }catch(e){}
+}
+function toggleTheme(){
+  const c = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', c === 'dark' ? 'light' : 'dark');
+}
+hydrate();
+</script>
+</body>
+</html>

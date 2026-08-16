@@ -400,12 +400,29 @@ async def dashboard(request: Request):
 
 
 @app.get("/dashboard/v2")
-async def dashboard_v2(request: Request):
-    """New PaperTrade-inspired dashboard. Lives alongside /dashboard so users
-    can flip between old and new without a redeploy."""
+async def dashboard_v2_hub(request: Request):
+    """MAP TRADE landing hub — user picks Paper Trade or AI Trader."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "hub.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2/ai")
+async def dashboard_v2_ai(request: Request):
+    """AI Trader console (the autonomous bot dashboard)."""
     if not await check_session(request):
         return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index_v2.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2/paper")
+async def dashboard_v2_paper(request: Request):
+    """Manual Paper Trade console (option chain + trade drawer)."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "paper.html",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
