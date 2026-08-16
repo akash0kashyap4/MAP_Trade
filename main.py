@@ -31,6 +31,7 @@ from ai.news import NewsBrain
 from ai.reporter import DailyReporter
 from bot.trader import LiveTrader
 from routers.routes import router as api_router
+from routers.dashboard import router as dashboard_router
 from routers.sse import sse_endpoint
 from scheduler import setup_scheduler
 from groww.live_feed import start_feed
@@ -181,6 +182,9 @@ app = FastAPI(
 # how ~20 routes shipped open. The only public POST /api/login is declared
 # directly on `app` below, so it is unaffected by this dependency.
 app.include_router(api_router, prefix="/api", dependencies=[Depends(require_user)])
+# Dashboard-v2 endpoints — same auth policy, own prefix. Registered separately
+# so removing v2 is a one-line revert without touching the legacy routes.
+app.include_router(dashboard_router, dependencies=[Depends(require_user)])
 
 
 @app.middleware("http")
@@ -392,6 +396,16 @@ async def dashboard(request: Request):
     if not await check_session(request):
         return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2")
+async def dashboard_v2(request: Request):
+    """New PaperTrade-inspired dashboard. Lives alongside /dashboard so users
+    can flip between old and new without a redeploy."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "index_v2.html",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
