@@ -168,6 +168,12 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.4)}
   #hamburger{display:flex!important}
   .right-panel{display:none!important}
   #main-content{min-width:0;overflow-x:hidden}
+  /* Right panel is hidden on mobile — collapse the reserved 300px column so
+     the main content uses the full width instead of being squeezed to a sliver. */
+  #content-row{grid-template-columns:1fr!important}
+  #hero-section{grid-template-columns:1fr!important}
+  #ind-grid{grid-template-columns:repeat(3,1fr)!important}
+  #settings-actions{grid-template-columns:1fr 1fr!important}
 }
 @media(max-width:900px){
   .right-panel{width:220px!important}
@@ -389,7 +395,7 @@ button.hdr-badge {
     </div>
 
     <!-- CONTENT ROW -->
-    <div style="flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-height:0">
+    <div id="content-row" style="flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-height:0">
 
       <!-- MAIN LEFT -->
       <div id="main-left" style="overflow-y:auto;overflow-x:hidden;min-width:0">
@@ -575,7 +581,7 @@ button.hdr-badge {
 
           <!-- SECTION: Settings -->
           <div id="sec-settings" style="display:none">
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+            <div id="settings-actions" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
               <div class="card" style="border-radius:16px;padding:18px">
                 <div style="font-size:9px;font-weight:700;color:#52525B;letter-spacing:.6px;margin-bottom:5px">TRADING MODE</div>
                 <div style="font-size:11px;color:#71717A;margin-bottom:12px;line-height:1.5">Switch between Paper simulation and Live AngelOne trading.</div>
@@ -923,19 +929,6 @@ button.hdr-badge {
     } catch (err) {
       throw err;
     }
-  };
-})();
-
-// ════════════════════════════════════════════════════
-//  401 INTERCEPTOR — must run first, before any fetch calls
-// ════════════════════════════════════════════════════
-(function(){
-  var _origFetch = window.fetch;
-  window.fetch = function() {
-    return _origFetch.apply(this, arguments).then(function(r) {
-      if (r.status === 401) { window.location.href = '/login'; }
-      return r;
-    });
   };
 })();
 
