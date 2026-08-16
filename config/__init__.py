@@ -90,6 +90,21 @@ TRADING = {
     # the position and move SL to breakeven. Rest rides for full target.
     "partial_book_enabled": True,
     "partial_book_ratio":   0.60,   # book half at 60% of the way to target
+
+    # ─── EV gate + hard gates for naked buys (plug the -EV leak) ─────────
+    # Naked option buying is structurally -EV; this rejects the worst of it
+    # without making the bot passive. Defaults are deliberately loose.
+    "ev_gate_enabled":   True,    # reject naked buys whose expected value < 0
+    "hard_gate_min_conf": 4,      # block no-conviction signals (conf < 4)
+    "hard_gate_vix_ceiling": 30.0,# block only panic-level VIX
+    "hard_gate_min_oi":  0,       # 0 = liquidity gate off (set >0 to enforce)
+
+    # ─── Multi-leg spread execution ─────────────────────────────────────
+    # OFF by default so the live money path is unchanged unless explicitly
+    # opted in. When on, the paper console and (future) live path can place
+    # defined-risk spreads instead of naked buys.
+    "enable_multi_leg":  False,
+    "spread_width":      2,       # strikes between long/short legs
 }
 
 SCHEDULE = {

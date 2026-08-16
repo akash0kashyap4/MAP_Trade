@@ -432,6 +432,90 @@ async def paper_order(order: PaperOrder):
     return {"order_id": oid, "status": "filled", "fill_price": fill_price, "quantity": quantity}
 
 
+class SpreadOrder(BaseModel):
+    instrument: str
+    kind:       str = Field(pattern=r"^(bull_call|bear_put|iron_fly)$")
+    lots:       int = Field(ge=1, le=99, default=1)
+    width:      int = Field(ge=1, le=10, default=2)
+
+
+@router.post("/paper/spread")
+async def paper_spread(order: SpreadOrder):
+    """Execute a defined-risk multi-leg spread as a single paper position.
+
+    Builds the legs from the live option chain, computes real economics
+    (net debit/credit, max profit/loss, breakevens, reward:risk) via
+    bot.spreads, and books it. This is the concrete 'spreads execute' path —
+    the strategy catalogue is no longer just a picture."""
+    from bot.spreads import build_spread, spread_economics
+
+    instrument = order.instrument.upper()
+    if instrument not in INSTRUMENTS:
+        raise HTTPException(status_code=400, detail="unknown instrument")
+
+    step = 100 if instrument == "SENSEX" else 50
+    snap = await _chain_snapshot(instrument)
+    rows = snap.get("rows") or []
+    atm  = snap.get("atm") or 0
+    if not rows or not atm:
+        raise HTTPException(status_code=503, detail="option chain unavailable — cannot price spread")
+
+    legs = build_spread(order.kind, atm, step, rows, width=order.width)
+    if not legs:
+        raise HTTPException(status_code=422,
+                            detail=f"could not build {order.kind}: missing leg premiums near ATM {atm}")
+
+    lot = LOT_SIZES.get(instrument, 65)
+    econ = spread_economics(legs, lot, order.lots)
+
+    oid = uuid.uuid4().hex[:12]
+    now = datetime.now(IST).isoformat()
+    leg_dicts = [
+        {"option_type": lg.option_type, "strike": lg.strike, "side": lg.side,
+         "premium": round(lg.premium, 2), "qty_ratio": lg.qty_ratio}
+        for lg in legs
+    ]
+    _paper_book[oid] = {
+        "id":         oid,
+        "instrument": instrument,
+        "kind":       order.kind,
+        "is_spread":  True,
+        "legs":       leg_dicts,
+        "strike":     atm,
+        "type":       "SPREAD",
+        "side":       "SELL" if econ.is_credit else "BUY",
+        "quantity":   lot * order.lots,
+        "lots":       order.lots,
+        "entry":      round(abs(econ.net_debit) / max(1, lot * order.lots), 2),
+        "ltp":        round(abs(econ.net_debit) / max(1, lot * order.lots), 2),
+        "pnl":        0.0,
+        "net_debit":  econ.net_debit,
+        "max_profit": econ.max_profit,
+        "max_loss":   econ.max_loss,
+        "reward_risk": econ.reward_risk,
+        "breakevens": econ.breakevens,
+        "sl":         None,
+        "target":     None,
+        "expiry":     snap.get("expiry"),
+        "entry_time": now,
+        "status":     "OPEN",
+    }
+    return {
+        "order_id":   oid,
+        "status":     "filled",
+        "kind":       order.kind,
+        "legs":       leg_dicts,
+        "economics": {
+            "net_debit":   econ.net_debit,
+            "is_credit":   econ.is_credit,
+            "max_profit":  econ.max_profit,
+            "max_loss":    econ.max_loss,
+            "reward_risk": econ.reward_risk,
+            "breakevens":  econ.breakevens,
+        },
+    }
+
+
 @router.get("/paper/positions")
 async def paper_positions():
     """Live paper-trade positions with LTP refreshed from the shared price

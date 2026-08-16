@@ -115,6 +115,30 @@ The NSE 2026 trading-holiday list is baked into `config.NSE_HOLIDAYS` and used b
 
 ---
 
+## Spreads, EV gate & hard gates
+
+Naked option buying is structurally negative-expectancy, so the bot now filters
+and can replace it with defined-risk structures (`bot/spreads.py`):
+
+- **EV gate** (`ev_gate_enabled`, default on): before a naked buy is placed the
+  trader computes its expected value —
+  `p_win·(target−entry) − (1−p_win)·(entry−sl) − fees` — and **rejects** trades
+  whose geometry is negative-EV. `p_win` is derived conservatively from AI
+  confidence (a 10 tops out at 0.70).
+- **Hard gates** (defaults loose so normal setups pass): block only the
+  dangerous extremes — `hard_gate_min_conf` (default 4), `hard_gate_vix_ceiling`
+  (default 30), optional `hard_gate_min_oi` liquidity floor (0 = off).
+- **Multi-leg spreads** (`enable_multi_leg`, default **off**): bull-call,
+  bear-put and iron-fly structures with full economics (net debit/credit, max
+  profit/loss, breakevens, reward:risk). Execute a spread as a defined-risk
+  paper position via `POST /api/dashboard/paper/spread`
+  `{instrument, kind, lots, width}`. The live AI entry path stays naked-only
+  until `enable_multi_leg` is turned on.
+
+All knobs live in `config.py`'s `TRADING` dict.
+
+---
+
 ## Data reliability & health
 
 Market data comes from unofficial NSE and Groww endpoints with a mock generator

@@ -740,6 +740,43 @@ class LiveTrader:
                 target = round(entry_price * (1 + TRADING.get("fallback_target_pct", 0.60)), 2)
             log.info("AI_SL_TP", f"sl={sl} tgt={target} (ai_sl={ai_sl} ai_tgt={ai_tgt})")
 
+            # ── Hard gates + EV filter (plug the naked-buy -EV leak) ─────────
+            # Cheap, explicit gates BEFORE committing capital. Defaults are
+            # loose (conf>=4, VIX<=30) so normal setups pass; they only block
+            # genuinely dangerous extremes and negative-expectancy geometry.
+            from bot.spreads import passes_hard_gates, naked_buy_ev, confidence_to_pwin
+            atm_oi_val = 0.0
+            try:
+                _ce = options_snapshot.get("atm_ce_oi")
+                _pe = options_snapshot.get("atm_pe_oi")
+                atm_oi_val = float(_ce or 0) + float(_pe or 0)
+            except Exception:
+                atm_oi_val = 0.0
+            gates_ok, gate_reason = passes_hard_gates(
+                ai_conf, vix_val, atm_oi_val,
+                min_confidence=TRADING.get("hard_gate_min_conf", 4),
+                vix_ceiling=TRADING.get("hard_gate_vix_ceiling", 30.0),
+                min_liquidity_oi=TRADING.get("hard_gate_min_oi", 0),
+            )
+            if not gates_ok:
+                log.guard_block("HardGate", gate_reason)
+                log.finalize("SKIP", "hard_gate")
+                self._log_skip(instrument, f"Hard gate: {gate_reason}", time_str, log)
+                return
+            log.guard_pass("HardGate", gate_reason)
+
+            if TRADING.get("ev_gate_enabled", True):
+                # Approximate round-trip fee per unit so EV is net of costs.
+                _fee_per_unit = 40.0 / max(1, quantity)
+                ev = naked_buy_ev(entry_price, sl, target,
+                                  confidence_to_pwin(ai_conf), fees_per_unit=_fee_per_unit)
+                if not ev.accept:
+                    log.guard_block("EVGate", ev.reason)
+                    log.finalize("SKIP", "ev_gate")
+                    self._log_skip(instrument, f"EV gate: {ev.reason}", time_str, log)
+                    return
+                log.guard_pass("EVGate", ev.reason)
+
             # Session-level risk limits: profit lock, per-symbol trade cap,
             # consecutive-loss cooldown, and per-trade risk cap (may downsize
             # quantity to respect it).
