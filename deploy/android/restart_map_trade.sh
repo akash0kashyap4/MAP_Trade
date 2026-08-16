@@ -1,11 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================
-# RAGI BOT — RESTART (Android/Termux)
+# MAP TRADE BOT — RESTART (Android/Termux)
 # ============================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "[ragi] Restarting bot..."
-bash "$SCRIPT_DIR/stop_ragi.sh"
+echo "[map_trade] Restarting bot..."
+bash "$SCRIPT_DIR/stop_map_trade.sh"
 sleep 2
-bash "$SCRIPT_DIR/start_ragi.sh"
+bash "$SCRIPT_DIR/start_map_trade.sh"

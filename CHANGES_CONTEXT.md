@@ -1,4 +1,4 @@
-# Ragi Bot — Changes Context (Antigravity)
+# MAP TRADE Bot — Changes Context (Antigravity)
 > Is session me kiye gaye sabhi changes ka complete summary.
 > Branch: `claude/dazzling-bohr-zoc44b`
 > Locally apply karne ke liye Step-by-step guide niche hai.

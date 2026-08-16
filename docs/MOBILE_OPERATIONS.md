@@ -1,4 +1,4 @@
-# Ragi Bot — Mobile Operations Guide
+# MAP TRADE Bot — Mobile Operations Guide
 
 ## Quick Reference
 
@@ -6,16 +6,16 @@
 
 ```bash
 # Start the bot
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 
 # Stop the bot  
-bash deploy/android/stop_ragi.sh
+bash deploy/android/stop_map_trade.sh
 
 # Restart
-bash deploy/android/restart_ragi.sh
+bash deploy/android/restart_map_trade.sh
 
 # Full status check
-bash deploy/android/status_ragi.sh
+bash deploy/android/status_map_trade.sh
 
 # Quick health check
 curl -s localhost:8000/health/detailed | python -m json.tool
@@ -25,13 +25,13 @@ curl -s localhost:8000/health/detailed | python -m json.tool
 
 ```bash
 # Live log stream
-tail -f logs/ragi.log
+tail -f logs/map_trade.log
 
 # Last 50 lines
-tail -50 logs/ragi.log
+tail -50 logs/map_trade.log
 
 # Search for errors
-grep -i "error\|exception\|fail" logs/ragi.log | tail -20
+grep -i "error\|exception\|fail" logs/map_trade.log | tail -20
 
 # Runtime log (AI provider activity)
 tail -f logs/runtime.log
@@ -47,9 +47,9 @@ tail -f logs/watchdog.log
 bash deploy/android/watchdog.sh &
 
 # Check watchdog status
-bash deploy/android/status_ragi.sh
+bash deploy/android/status_map_trade.sh
 
-# Stop watchdog (also stopped when you run stop_ragi.sh)
+# Stop watchdog (also stopped when you run stop_map_trade.sh)
 kill $(cat deploy/android/pids/watchdog.pid)
 ```
 
@@ -63,9 +63,9 @@ bash deploy/android/backup_db.sh
 ls -lh data_store/backups/
 
 # Restore backup (stop bot first!)
-bash deploy/android/stop_ragi.sh
+bash deploy/android/stop_map_trade.sh
 cp data_store/backups/trading_bot_YYYYMMDD_HHMMSS.db data_store/trading_bot.db
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 
 # Database size
 du -h data_store/trading_bot.db
@@ -86,7 +86,7 @@ ps aux | grep python
 ss -tlnp | grep 8000
 
 # Check PID file
-cat deploy/android/pids/ragi.pid
+cat deploy/android/pids/map_trade.pid
 
 # Manual start (foreground, for debugging)
 source venv/bin/activate
@@ -123,7 +123,7 @@ grep APP_PORT .env
 
 ```bash
 # Stop the bot
-bash deploy/android/stop_ragi.sh
+bash deploy/android/stop_map_trade.sh
 
 # Remove lock files (safe when bot is stopped)
 rm -f data_store/trading_bot.db-wal
@@ -133,14 +133,14 @@ rm -f data_store/trading_bot.db-shm
 sqlite3 data_store/trading_bot.db "PRAGMA integrity_check;"
 
 # Restart
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 ```
 
 ### High memory / CPU
 
 ```bash
 # Check memory usage
-cat /proc/$(cat deploy/android/pids/ragi.pid)/status | grep VmRSS
+cat /proc/$(cat deploy/android/pids/map_trade.pid)/status | grep VmRSS
 
 # If using Ollama, check its memory
 ps aux | grep ollama
@@ -156,7 +156,7 @@ ps aux | grep ollama
 # If not:
 termux-wake-lock
 cd ~/Ragi_bot
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 bash deploy/android/watchdog.sh &
 ```
 
@@ -174,7 +174,7 @@ curl localhost:8000/health
 curl localhost:8000/health/detailed
 
 # Full trading status (authenticated)
-curl -b "ragi_session=<your-token>" localhost:8000/api/status
+curl -b "map_trade_session=<your-token>" localhost:8000/api/status
 ```
 
 ### What each health field means

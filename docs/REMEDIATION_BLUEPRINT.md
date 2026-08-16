@@ -1,4 +1,4 @@
-# RAGI-BOT Trading Terminal — Enterprise Remediation Blueprint
+# MAP TRADE-BOT Trading Terminal — Enterprise Remediation Blueprint
 
 **Version:** 1.0 · **Date:** 2026-07-12 · **Scope:** akash.mehakva.com / this repository
 **Audit baseline:** external enterprise audit scoring 4/10
@@ -42,7 +42,7 @@ issues the audit missed that are individually launch-blocking:
 
 **Repo ↔ deployment drift — CONFIRMED, and it is the single biggest structural
 risk.** The live-site audit let me pin this down: **production is not running
-`main`.** It is running branch **`claude/ragi-bot-improvements-6nyz1v` (commit
+`main`.** It is running branch **`claude/map-trade-bot-improvements-6nyz1v` (commit
 `cd4aebb`, "feat: AI learning system — news brain, daily reports, strategy lab")**,
 proven by exact-match evidence — only that branch contains the Reports sub-tabs
 with the precise stuck `Loading…` strings the audit saw (`dashboard/index.html`
@@ -50,11 +50,11 @@ ids `strat-list`, `knowledge-list`, `news-items`) and the `/api/ai/strategies`,
 `/api/ai/knowledge`, `/api/news/today` endpoints (`routers/routes.py:893-909`).
 None of that exists on `main`.
 
-**Branch relationship (verified with `git merge-base`): `claude/ragi-bot-
+**Branch relationship (verified with `git merge-base`): `claude/map-trade-bot-
 improvements-6nyz1v` is a clean *superset* of `main`** — `main` is its ancestor
 plus four feature commits. So reconciliation is a fast, conflict-free merge, not a
 fork to untangle. **This has now been done:** the deployed branch is merged into
-this remediation branch (`claude/ragi-bot-audit-10-10-27njzj`), which is therefore
+this remediation branch (`claude/map-trade-bot-audit-10-10-27njzj`), which is therefore
 the single lineage carrying production's AI/news/reports features **and** the
 Phase 1 security fixes below. Redeploy production from this branch (Phase 0).
 
@@ -115,9 +115,9 @@ Anything less is not 10/10, regardless of how the UI looks.
 Ordered execution sequence. Do not reorder security below polish.
 
 ### Phase 0 — Reconcile branches, establish one deploy lineage ✅ DONE
-`claude/ragi-bot-improvements-6nyz1v` (`cd4aebb`) is a superset of `main`, so the
+`claude/map-trade-bot-improvements-6nyz1v` (`cd4aebb`) is a superset of `main`, so the
 merge was clean.
-- **P0.0 ✅** Merged the deployed branch into `claude/ragi-bot-audit-10-10-27njzj`;
+- **P0.0 ✅** Merged the deployed branch into `claude/map-trade-bot-audit-10-10-27njzj`;
   it now carries production's features + the Phase 1 fixes, with a single correct
   override handler.
 - **P0.1** ☐ Redeploy production from this branch; add its SHA to the dashboard
@@ -251,7 +251,7 @@ ENV = os.getenv("ENV", "development")
 # main.py
 _prod = ENV == "production"
 app = FastAPI(
-    title="Ragi Trading Bot",
+    title="MAP TRADE Trading Bot",
     lifespan=lifespan,
     docs_url=None if _prod else "/docs",
     redoc_url=None if _prod else "/redoc",
@@ -259,7 +259,7 @@ app = FastAPI(
 )
 ```
 
-Set `ENV=production` in `deploy/ragi.service` and `.env.example`. Belt-and-braces:
+Set `ENV=production` in `deploy/map_trade.service` and `.env.example`. Belt-and-braces:
 also block `/docs`, `/redoc`, `/openapi.json` in nginx with `return 404;`.
 
 **Acceptance:** with `ENV=production`, GET /docs, /redoc, /openapi.json → 404.
@@ -298,7 +298,7 @@ if ENV != "production":
 ```
 
 The comment "Behind basic auth in nginx" (routes.py:25) is wishful — the shipped
-`deploy/ragi.nginx` has no auth stanza. Never treat comments as controls.
+`deploy/map_trade.nginx` has no auth stanza. Never treat comments as controls.
 
 ### 4.6 HIGH — Login rate limiting is broken behind nginx (main.py:169-188)
 
@@ -307,8 +307,8 @@ clients share one failure bucket: 10 failed attempts by *anyone* locks out
 *everyone* (attacker-controlled lockout), and per-IP attribution is lost.
 
 Fix: run uvicorn with `--proxy-headers --forwarded-allow-ips 127.0.0.1` (add to
-`deploy/ragi.service` ExecStart) so `request.client.host` reflects
-`X-Forwarded-For` — nginx already sets it (`deploy/ragi.nginx:9`). Additionally,
+`deploy/map_trade.service` ExecStart) so `request.client.host` reflects
+`X-Forwarded-For` — nginx already sets it (`deploy/map_trade.nginx:9`). Additionally,
 key the limiter on `(ip, username)` and add a global cap (e.g. 50 failures/15min
 across all IPs → alert via Telegram) so a botnet can't brute-force under per-IP
 radar. Log every failure with IP + username to the audit log (§7.3).
@@ -340,7 +340,7 @@ async def security_headers(request, call_next):
 and move JS to a file, then drop `unsafe-inline` for scripts. Do the CSP in
 report-only mode for one day first.)
 
-nginx (`deploy/ragi.nginx`) must gain a 443 server block (certbot), an 80→443
+nginx (`deploy/map_trade.nginx`) must gain a 443 server block (certbot), an 80→443
 redirect, `add_header Strict-Transport-Security "max-age=31536000" always;`, and
 `return 404` for `/docs|/redoc|/openapi.json`. Note: the `Secure` cookie flag
 (main.py:206) means login is **already broken over plain HTTP** — if login
@@ -569,7 +569,7 @@ Breakpoints to implement and test: 320 / 375 / 390 / 414 / 768 / 1024 / 1440.
   AI panel in `<aside aria-label="AI Brain">`, top bar in `<header>`. The nav
   items are `onclick` `<div>`s (index.html:625) — convert to `<button>`s (keyboard
   + accessible name for free).
-- One `<h1>` (RAGI·BOT / page title), section titles as `<h2>`, card titles `<h3>`.
+- One `<h1>` (MAP TRADE·BOT / page title), section titles as `<h2>`, card titles `<h3>`.
 - The section-switcher (`setNav`) is a tab pattern: `role="tablist"` on the nav,
   `role="tab"` + `aria-selected` per item, `role="tabpanel"` per `.nav-section-panel`,
   arrow-key navigation.
@@ -746,7 +746,7 @@ approval (GitHub environment protection rule); deploys happen only from `main`.
 15. ☐ Full CI green on the deployed SHA; audit log reviewed after smoke test.
 
 **Rollback plan:** systemd + git deploy — keep the previous release SHA tagged
-(`release-prev`); rollback = `git checkout release-prev && systemctl restart ragi`,
+(`release-prev`); rollback = `git checkout release-prev && systemctl restart map_trade`,
 < 2 minutes. Database schema changes in this remediation are additive only (new
 `operator_audit` table), so rollback is schema-safe. If a rollback happens while
 positions are open, first action after restart is verifying `recover_active_positions`

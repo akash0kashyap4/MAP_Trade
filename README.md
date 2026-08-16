@@ -1,4 +1,4 @@
-# RAGI — Autonomous Options Trading Bot
+# MAP TRADE — Autonomous Options Trading Bot
 
 Self-learning paper-trading bot for NSE index options (Nifty 50, Bank Nifty, Sensex).
 Groww API for market data; **Claude Sonnet 4.6** (via Claude Code CLI or the
@@ -167,7 +167,7 @@ CLAUDE_BIN=/usr/local/bin/claude
 ### 3. Run
 ```bash
 python main.py                # dev
-sudo systemctl restart ragi   # on EC2
+sudo systemctl restart map_trade   # on EC2
 ```
 
 Dashboard: **https://akash.mehakva.com** (Basic Auth: `raj / <password>`).
@@ -200,12 +200,12 @@ dashboard can render the full gate-by-gate reasoning.
 
 | Time (IST) | Job                             | Where                             |
 |------------|---------------------------------|-----------------------------------|
-| 04:00      | Groww API health check          | `ragi-token-refresh.timer`        |
-| 06:30      | Claude CLI warm-up ping         | `ragi-claude-warmup.timer`        |
-| 08:30      | Premarket analysis + Telegram   | `scheduler.py` inside `ragi.service` |
-| 09:15-15:30| 5-min market ticks              | inside `ragi.service`             |
-| 15:15      | EOD square-off + Telegram summary| inside `ragi.service`            |
-| 21:00      | Nightly self-learning           | inside `ragi.service`             |
+| 04:00      | Groww API health check          | `map_trade-token-refresh.timer`        |
+| 06:30      | Claude CLI warm-up ping         | `map_trade-claude-warmup.timer`        |
+| 08:30      | Premarket analysis + Telegram   | `scheduler.py` inside `map_trade.service` |
+| 09:15-15:30| 5-min market ticks              | inside `map_trade.service`             |
+| 15:15      | EOD square-off + Telegram summary| inside `map_trade.service`            |
+| 21:00      | Nightly self-learning           | inside `map_trade.service`             |
 
 Skipped automatically on weekends and the 16 NSE 2026 holidays.
 

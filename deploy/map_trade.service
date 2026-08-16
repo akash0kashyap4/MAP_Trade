@@ -1,5 +1,5 @@
 [Unit]
-Description=Ragi Trading Bot (Gunicorn/Uvicorn)
+Description=MAP TRADE Trading Bot (Gunicorn/Uvicorn)
 After=network.target
 
 [Service]

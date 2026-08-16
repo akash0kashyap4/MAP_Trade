@@ -1,5 +1,5 @@
 """
-HTTP-level security tests for the Ragi trading terminal.
+HTTP-level security tests for the MAP TRADE trading terminal.
 
 Unlike the older suites that call route functions directly, these drive the real
 FastAPI app through Starlette's TestClient so routing, the router-level auth

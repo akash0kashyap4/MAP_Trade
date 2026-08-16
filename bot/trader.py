@@ -148,7 +148,7 @@ class LiveTrader:
         store.premarket_bias = plan
         store.ai_status = "waiting"
         print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
-        await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
+        await _send_telegram(f"📊 MAP TRADE Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
         self._market_open = True
 
     def _check_market_open(self) -> bool:
@@ -290,7 +290,7 @@ class LiveTrader:
                 failed.append(label)
                 print(f"[trader] EMERGENCY square-off FAILED for {label}: {e}")
 
-        msg = f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
+        msg = f"[MAP TRADE] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
         if failed:
             msg += (f"\n⚠️ FAILED to close {len(failed)}: {', '.join(failed)} — "
                     "CHECK YOUR BROKER TERMINAL MANUALLY.")
@@ -887,7 +887,7 @@ class LiveTrader:
         summary = store.get_daily_summary()
         print(f"[trader] EOD Summary: {summary}")
         await _send_telegram(
-            f"📈 Ragi EOD\n"
+            f"📈 MAP TRADE EOD\n"
             f"P&L=₹{summary['total']:,.0f}  Positions={summary['positions']}"
         )
         store.reset_daily()

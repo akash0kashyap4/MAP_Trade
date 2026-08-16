@@ -77,7 +77,7 @@ single-chunk fallback.
 ## 3. Deliberate deviation from the brief (and why)
 
 The brief said "remove the Anthropic SDK entirely" and "make Claude Code CLI the
-default." Ragi Bot is **not** a throwaway local RAG demo — it is a **live options
+default." MAP TRADE Bot is **not** a throwaway local RAG demo — it is a **live options
 trading bot** currently running in production on a cloud host, where the working
 runtimes are the Anthropic API (paid) and Gemini (free), and where the `claude`
 CLI is not installed/authenticated. As the accountable owner:

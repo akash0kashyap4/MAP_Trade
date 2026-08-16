@@ -1,5 +1,5 @@
 """
-RAGI -- Self-Learning Options Trading Bot
+MAP TRADE -- Self-Learning Options Trading Bot
 Nifty / BankNifty / Sensex | Upstox API | Claude Code Brain
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("ragi.main")
+log = logging.getLogger("map_trade.main")
 
 
 # ─── Auth config ────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ class _DBProxy:
 
 
 app = FastAPI(
-    title="Ragi Trading Bot",
+    title="MAP TRADE Trading Bot",
     lifespan=lifespan,
     # In production the interactive docs and raw schema are disabled so the
     # private API surface (incl. trading-control endpoints) is not published.
@@ -201,7 +201,7 @@ async def security_headers(request: Request, call_next):
 @app.get("/health")
 async def health():
     """Health check for load balancers and uptime monitors."""
-    return {"status": "ok", "service": "ragi-bot"}
+    return {"status": "ok", "service": "map-trade-bot"}
 
 
 @app.get("/health/detailed")
@@ -399,7 +399,7 @@ def _print_startup_banner(host: str, port: int) -> None:
     lan_ip = _get_lan_ip()
     print()
     print("=" * 56)
-    print("  RAGI BOT — Self-Learning Options Trading Bot")
+    print("  MAP TRADE BOT — Self-Learning Options Trading Bot")
     print("=" * 56)
     print(f"  Server:    {host}:{port}")
     print(f"  Dashboard: http://{lan_ip}:{port}")

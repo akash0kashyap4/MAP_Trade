@@ -1,15 +1,15 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================
-# RAGI BOT — STATUS CHECK (Android/Termux)
+# MAP TRADE BOT — STATUS CHECK (Android/Termux)
 # ============================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RAGI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PID_FILE="$SCRIPT_DIR/pids/ragi.pid"
+MAP_TRADE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PID_FILE="$SCRIPT_DIR/pids/map_trade.pid"
 WATCHDOG_PID_FILE="$SCRIPT_DIR/pids/watchdog.pid"
 APP_PORT="${APP_PORT:-8000}"
 
-echo "=== Ragi Bot Status ==="
+echo "=== MAP TRADE Bot Status ==="
 echo ""
 
 # Bot process
@@ -62,7 +62,7 @@ fi
 # Database
 echo ""
 echo "--- Database ---"
-DB_FILE="$RAGI_DIR/data_store/trading_bot.db"
+DB_FILE="$MAP_TRADE_DIR/data_store/trading_bot.db"
 if [ -f "$DB_FILE" ]; then
     DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
     echo "  SQLite:    $DB_FILE ($DB_SIZE)"
@@ -73,7 +73,7 @@ fi
 # Logs
 echo ""
 echo "--- Recent Log ---"
-LOG_FILE="$RAGI_DIR/logs/ragi.log"
+LOG_FILE="$MAP_TRADE_DIR/logs/map_trade.log"
 if [ -f "$LOG_FILE" ]; then
     LOG_SIZE=$(du -h "$LOG_FILE" | cut -f1)
     echo "  Log file:  $LOG_FILE ($LOG_SIZE)"
@@ -86,7 +86,7 @@ fi
 # Disk space
 echo ""
 echo "--- Disk ---"
-df -h "$RAGI_DIR" 2>/dev/null | tail -1 | awk '{print "  Available: " $4 " of " $2}'
+df -h "$MAP_TRADE_DIR" 2>/dev/null | tail -1 | awk '{print "  Available: " $4 " of " $2}'
 
 echo ""
 echo "========================"

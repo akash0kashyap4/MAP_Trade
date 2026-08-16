@@ -1,4 +1,4 @@
-# Ragi Bot — Mobile Migration Audit (Moto G51 5G)
+# MAP TRADE Bot — Mobile Migration Audit (Moto G51 5G)
 
 **Date:** 2026-08-14
 **Target Device:** Motorola Moto G51 5G (Snapdragon 480+, 4/6 GB RAM, Android)
@@ -11,14 +11,14 @@
 
 | File | Line | Issue | Solution |
 |------|------|-------|----------|
-| `deploy/ragi.service` | 8,9,14 | `WorkingDirectory=/root/Ragi_bot`, `PATH=/root/Ragi_bot/venv/bin`, `ExecStart=/root/Ragi_bot/...` | VPS-only file; kept as-is. Android uses `deploy/android/` scripts with dynamic `RAGI_DIR` |
-| `deploy.sh` | 6 | `cd /home/user/Ragi_bot` | VPS-only script; kept as-is. Android uses `deploy/android/start_ragi.sh` |
+| `deploy/map_trade.service` | 8,9,14 | `WorkingDirectory=/root/Ragi_bot`, `PATH=/root/Ragi_bot/venv/bin`, `ExecStart=/root/Ragi_bot/...` | VPS-only file; kept as-is. Android uses `deploy/android/` scripts with dynamic `MAP_TRADE_DIR` |
+| `deploy.sh` | 6 | `cd /home/user/Ragi_bot` | VPS-only script; kept as-is. Android uses `deploy/android/start_map_trade.sh` |
 
 ## 2. systemd / Service Assumptions
 
 | File | Issue | Solution |
 |------|-------|----------|
-| `deploy/ragi.service` | systemd unit — unavailable on Termux | Keep for VPS. Android uses PID-file + watchdog shell scripts |
+| `deploy/map_trade.service` | systemd unit — unavailable on Termux | Keep for VPS. Android uses PID-file + watchdog shell scripts |
 | `deploy.sh` | Assumes systemd restart | Keep for VPS. Android scripts handle restart independently |
 
 ## 3. Docker Assumptions
@@ -29,7 +29,7 @@ None found. The project does not use Docker.
 
 | File | Issue | Solution |
 |------|-------|----------|
-| `deploy/ragi.service` | `User=root` | VPS-only. Android scripts run as the Termux user (no root needed) |
+| `deploy/map_trade.service` | `User=root` | VPS-only. Android scripts run as the Termux user (no root needed) |
 
 ## 5. PostgreSQL Dependencies
 
@@ -42,7 +42,7 @@ None found. The project does not use Docker.
 
 | File | Issue | Solution |
 |------|-------|----------|
-| `config/__init__.py:117` | `DB_PATH = os.getenv("DB_PATH", "trading_bot.db")` — relative path | Already configurable via env var. Android `.env` sets absolute path under `$RAGI_DIR/data/` |
+| `config/__init__.py:117` | `DB_PATH = os.getenv("DB_PATH", "trading_bot.db")` — relative path | Already configurable via env var. Android `.env` sets absolute path under `$MAP_TRADE_DIR/data/` |
 | `data/database.py` | No `timeout` on SQLite connections | Add `timeout=30` to prevent locking issues on constrained device |
 | `data/database.py` | No WAL mode | Enable WAL for better concurrent read/write on mobile |
 | `data/database.py` | No parent directory creation for DB path | Add `os.makedirs(parent, exist_ok=True)` |
@@ -103,7 +103,7 @@ All broker integrations are outbound HTTP. No inbound connectivity required.
 
 | File | Issue | Solution |
 |------|-------|----------|
-| `deploy/ragi.nginx` | nginx reverse proxy | Not needed on Android (direct uvicorn access) |
+| `deploy/map_trade.nginx` | nginx reverse proxy | Not needed on Android (direct uvicorn access) |
 | `main.py:325` | `host="0.0.0.0", port=8000` | Make configurable: `APP_HOST`, `APP_PORT` |
 
 ## 15. Logging and Log Rotation

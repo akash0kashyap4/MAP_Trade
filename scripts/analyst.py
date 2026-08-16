@@ -1,4 +1,4 @@
-"""Ragi Analyst CLI — the best-quality one-shot analysis.
+"""MAP TRADE Analyst CLI — the best-quality one-shot analysis.
 
 Usage:
     python -m scripts.analyst RELIANCE.NS --llm
@@ -38,7 +38,7 @@ async def _run(args):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Ragi Analyst — the best one-shot analysis")
+    p = argparse.ArgumentParser(description="MAP TRADE Analyst — the best one-shot analysis")
     p.add_argument("symbol")
     p.add_argument("--period", default="1y")
     p.add_argument("--interval", default="1d")

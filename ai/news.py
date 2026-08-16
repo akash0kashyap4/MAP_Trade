@@ -1,5 +1,5 @@
 """
-Ragi News Brain — fetches Indian market news from free RSS feeds (no API key),
+MAP TRADE News Brain — fetches Indian market news from free RSS feeds (no API key),
 asks Claude to convert headlines into a trading-relevant "market pulse", stores
 both, and feeds the pulse into premarket + intraday decision prompts.
 
@@ -149,7 +149,7 @@ class NewsBrain:
         if notify_fn:
             try:
                 await notify_fn(
-                    f"📰 Ragi News Pulse [{store.news_insight['updated']}]\n"
+                    f"📰 MAP TRADE News Pulse [{store.news_insight['updated']}]\n"
                     f"Sentiment: {store.news_insight['sentiment']} "
                     f"({store.news_insight['score']:+d})\n"
                     f"{store.news_insight['summary']}"

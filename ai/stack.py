@@ -17,7 +17,7 @@ import pandas as pd
 import pytz
 
 IST = pytz.timezone("Asia/Kolkata")
-CHART_DIR = Path(os.getenv("RAGI_CHART_DIR", "data/charts"))
+CHART_DIR = Path(os.getenv("MAP_TRADE_CHART_DIR", "data/charts"))
 
 
 def fetch_ohlcv(symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:

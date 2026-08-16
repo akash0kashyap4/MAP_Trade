@@ -1,4 +1,4 @@
-"""Ragi Brain orchestrator — one entrypoint that runs research + chart-read +
+"""MAP TRADE Brain orchestrator — one entrypoint that runs research + chart-read +
 sentiment + a quick backtest for a symbol, and returns a single bundle.
 
 LLM steps are optional; if no agent is passed you still get numbers.

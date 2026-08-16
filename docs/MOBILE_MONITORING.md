@@ -1,6 +1,6 @@
-# Ragi Bot — LAN Dashboard Monitoring
+# MAP TRADE Bot — LAN Dashboard Monitoring
 
-Monitor your Ragi Bot running on a Moto G51 (or any Android/Termux device) from a laptop or desktop on the same local network.
+Monitor your MAP TRADE Bot running on a Moto G51 (or any Android/Termux device) from a laptop or desktop on the same local network.
 
 ## How It Works
 
@@ -35,14 +35,14 @@ Dashboard: http://192.168.1.42:8000
 
 ```bash
 cd ~/Ragi_bot
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 ```
 
 The startup banner shows the exact URLs to use:
 
 ```
 ========================================================
-  RAGI BOT — Self-Learning Options Trading Bot
+  MAP TRADE BOT — Self-Learning Options Trading Bot
 ========================================================
   Server:    0.0.0.0:8000
   Dashboard: http://192.168.1.42:8000
@@ -81,7 +81,7 @@ curl http://192.168.1.42:8000/health/detailed | python3 -m json.tool
 
 Expected response from `/health`:
 ```json
-{"status": "ok", "service": "ragi-bot"}
+{"status": "ok", "service": "map-trade-bot"}
 ```
 
 ## Health Endpoint Fields
@@ -119,7 +119,7 @@ Then access at `http://<PHONE_IP>:9000`.
 ### Laptop cannot connect
 
 1. **Same network?** Both phone and laptop must be on the same Wi-Fi / LAN.
-2. **Bot running?** On the phone: `bash deploy/android/status_ragi.sh`
+2. **Bot running?** On the phone: `bash deploy/android/status_map_trade.sh`
 3. **Correct IP?** Phone IPs change when reconnecting to Wi-Fi. Re-check with `ifconfig wlan0`.
 4. **Port blocked?** Some routers block inter-device traffic ("AP isolation" or "client isolation"). Check router settings.
 5. **Firewall on laptop?** Unlikely for outbound HTTP, but check if a VPN or firewall blocks local network access.

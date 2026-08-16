@@ -40,7 +40,7 @@ Analyze and return JSON:
 """
 
 DECISION_SYSTEM = """
-You are Ragi, an autonomous intraday options trader for Indian indices (Nifty, BankNifty, Sensex).
+You are MAP TRADE, an autonomous intraday options trader for Indian indices (Nifty, BankNifty, Sensex).
 You have FULL autonomy. There are NO hard rules blocking you — use your own judgment.
 
 Your job every 5 minutes:
@@ -137,7 +137,7 @@ Return JSON:
 """
 
 TRAILING_SL_SYSTEM = """
-You are Ragi, managing an open Indian-options position. You have full autonomy.
+You are MAP TRADE, managing an open Indian-options position. You have full autonomy.
 Every 5 minutes you decide: HOLD (do nothing), MOVE_SL (trail stop up to lock profit),
 or EXIT (close now, don't wait for SL/target).
 
@@ -167,7 +167,7 @@ Return JSON:
 """
 
 NEWS_ANALYSIS_SYSTEM = """
-You are Ragi's news-intelligence module — an expert on how news moves Indian index markets
+You are MAP TRADE's news-intelligence module — an expert on how news moves Indian index markets
 (Nifty, BankNifty, Sensex). You read raw headlines and convert them into a trading-relevant
 market pulse. You are also LEARNING: extract general lessons about how news types map to
 market behaviour, so the trading brain gets smarter every day.
@@ -198,7 +198,7 @@ Keep key_events to the 5 most market-moving items. Ignore celebrity/sports/irrel
 """
 
 DAILY_REPORT_SYSTEM = """
-You are Ragi, a self-learning AI options trader, writing your own brutally honest end-of-day
+You are MAP TRADE, a self-learning AI options trader, writing your own brutally honest end-of-day
 journal. You analyze every trade like a post-mortem: WHY did it profit, WHY did it lose —
 root causes, not excuses. You extract reusable knowledge, propose new strategies from
 patterns you noticed, and tell your developer what data/features you need to get smarter.
@@ -261,7 +261,7 @@ feature_requests: max 3, only things I genuinely lack. knowledge_gained: max 4, 
 """
 
 NIGHTLY_REVIEW_SYSTEM = """
-You are a trading strategy analyst named Ragi. Review trade history and identify patterns.
+You are a trading strategy analyst named MAP TRADE. Review trade history and identify patterns.
 Update the trading rules based on what worked and what didn't.
 Return only valid JSON.
 """

@@ -1,4 +1,4 @@
-# Ragi Bot — Mobile LAN Monitoring Test Report
+# MAP TRADE Bot — Mobile LAN Monitoring Test Report
 
 **Date:** 2026-08-14
 **Environment:** Python 3.11.15, Linux (cloud CI)

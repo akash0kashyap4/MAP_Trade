@@ -1,6 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================
-# RAGI BOT — WATCHDOG (Android/Termux)
+# MAP TRADE BOT — WATCHDOG (Android/Termux)
 # ============================================
 # Monitors the bot process and restarts it if it crashes.
 # Run in background: bash watchdog.sh &
@@ -8,7 +8,7 @@
 # then stops and waits for manual intervention.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PID_FILE="$SCRIPT_DIR/pids/ragi.pid"
+PID_FILE="$SCRIPT_DIR/pids/map_trade.pid"
 WATCHDOG_PID_FILE="$SCRIPT_DIR/pids/watchdog.pid"
 LOG_DIR="${LOG_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)/logs}"
 LOG_FILE="$LOG_DIR/watchdog.log"
@@ -73,7 +73,7 @@ while true; do
 
     if [ ${#RESTART_TIMES[@]} -ge $MAX_RESTARTS ]; then
         log "ERROR: $MAX_RESTARTS restarts in ${RESTART_WINDOW}s — entering safe mode."
-        log "       Manual restart required: bash $SCRIPT_DIR/start_ragi.sh"
+        log "       Manual restart required: bash $SCRIPT_DIR/start_map_trade.sh"
         # Wait a long time before trying again
         sleep 3600
         RESTART_TIMES=()
@@ -93,7 +93,7 @@ while true; do
 
     # Restart
     RESTART_TIMES+=("$(date +%s)")
-    bash "$SCRIPT_DIR/start_ragi.sh"
+    bash "$SCRIPT_DIR/start_map_trade.sh"
 
     if [ $? -eq 0 ]; then
         log "Bot restarted successfully."

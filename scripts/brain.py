@@ -1,4 +1,4 @@
-"""CLI for the Ragi Brain.
+"""CLI for the MAP TRADE Brain.
 
 Usage:
     python -m scripts.brain RELIANCE.NS
@@ -35,7 +35,7 @@ async def _run(args):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Ragi Brain — research + chart + sentiment + backtest")
+    p = argparse.ArgumentParser(description="MAP TRADE Brain — research + chart + sentiment + backtest")
     p.add_argument("symbol", help="e.g. RELIANCE.NS, ^NSEI, TCS.NS")
     p.add_argument("--period", default="1y")
     p.add_argument("--interval", default="1d")

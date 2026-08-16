@@ -1,5 +1,5 @@
 """
-Ragi AI Brain — uses Claude Code CLI (claude -p) directly.
+MAP TRADE AI Brain — uses Claude Code CLI (claude -p) directly.
 No ANTHROPIC_API_KEY needed. Runs through your existing Claude Code session.
 """
 from __future__ import annotations
@@ -162,7 +162,7 @@ def _ask_claude(system: str, user: str, max_retries: int = 2, max_tokens: int | 
 
 class TradingAgent:
     """
-    Ragi's AI brain.
+    MAP TRADE's AI brain.
     Every decision goes through the local Claude Code CLI — no API key required.
     Maintains intra-day conversation context by accumulating the day's candle/signal history.
     """

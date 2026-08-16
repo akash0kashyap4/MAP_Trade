@@ -1,11 +1,11 @@
 #!/bin/bash
 # ============================================
-# RAGI BOT DEPLOYMENT STARTUP SCRIPT
+# MAP TRADE BOT DEPLOYMENT STARTUP SCRIPT
 # ============================================
 
 cd /home/user/Ragi_bot
 
-echo "🚀 Starting Ragi Bot deployment..."
+echo "🚀 Starting MAP TRADE Bot deployment..."
 
 # Step 1: Activate virtual environment
 echo "✓ Activating virtual environment..."
@@ -42,7 +42,7 @@ echo "✓ All required variables set"
 # Step 5: Start the application
 echo ""
 echo "═══════════════════════════════════════════════════════"
-echo "🎯 RAGI BOT IS STARTING"
+echo "🎯 MAP TRADE BOT IS STARTING"
 echo "═══════════════════════════════════════════════════════"
 echo "Port: ${BOT_PORT:-8999}"
 echo "Database: ${DATABASE_URL:-sqlite:///trading_bot.db}"
