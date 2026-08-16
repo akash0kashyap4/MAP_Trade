@@ -16,11 +16,11 @@ except ImportError:
 
 from data.yfsession import _SESSION as _YF_SESSION
 
-from config import TRADING, INSTRUMENTS
+from config import TRADING, INSTRUMENTS, LOT_SIZES
 from bot.order_executor import OrderExecutor
 from data.store import store
 from data import database as db
-from bot.risk import calc_quantity, check_risk_limits, max_positions_reached
+from bot.risk import calc_quantity, check_risk_limits, max_positions_reached, lots_from_confidence
 from bot.strategy import build_market_context
 from bot.decision_log import DecisionLog
 from bot.fees import apply_slippage, realistic_pnl
@@ -124,6 +124,40 @@ class LiveTrader:
         self._recent_entries: list[dict] = []   # tracks entries for correlated-position guard
         self._daily_loss_breaker_hit = False
         self._knowledge_cache: tuple[str, str] = ("", "")  # (date, formatted block)
+        # Cache heavy per-tick fetches so the 5-min loop doesn't bombard Yahoo /
+        # Groww when they slow down. VIX changes intraday but 3-5 min cache is
+        # plenty; global cues are premarket-relevant so 30 min is fine.
+        self._vix_cache: tuple[float, float] = (0.0, 0.0)          # (value, epoch)
+        self._global_cues_cache: tuple[dict, float] = ({}, 0.0)    # (dict, epoch)
+        self._profit_lock_engaged = False   # once tripped, open positions are pinned to BE
+
+    async def _cached_vix(self, ttl: int = 240) -> float:
+        """India VIX cached for `ttl` seconds. Yahoo/Upstox are the slow calls
+        that were making the 5-min tick sluggish; VIX doesn't move enough in
+        4 minutes to warrant re-fetching every tick."""
+        import time as _t
+        val, ts = self._vix_cache
+        if val and (_t.time() - ts) < ttl:
+            return val
+        try:
+            v = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
+        except Exception:
+            v = 0.0
+        if v and v > 0:
+            self._vix_cache = (float(v), _t.time())
+            return float(v)
+        return val or 0.0
+
+    async def _cached_global_cues(self, ttl: int = 1800) -> dict:
+        """Global cues (Dow/Nasdaq/Crude/DXY) barely move during Indian market
+        hours. 30-min cache slashes yfinance load and keeps ticks snappy."""
+        import time as _t
+        cues, ts = self._global_cues_cache
+        if cues and (_t.time() - ts) < ttl:
+            return cues
+        cues = await _fetch_global_cues()
+        self._global_cues_cache = (cues, _t.time())
+        return cues
 
     async def premarket_analysis(self):
         if store.bot_paused:
@@ -131,7 +165,7 @@ class LiveTrader:
             store.ai_status = "paused"
             return
         store.ai_status = "analyzing"
-        global_data = await _fetch_global_cues()
+        global_data = await self._cached_global_cues(ttl=0)   # fresh at premarket
         # Fetch India VIX via Upstox (more reliable than yfinance)
         vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
         if vix and vix > 0:
@@ -148,7 +182,7 @@ class LiveTrader:
         store.premarket_bias = plan
         store.ai_status = "waiting"
         print(f"[trader] Day plan: {plan.get('bias')} | Risk: {plan.get('risk_level')} | VIX={vix}")
-        await _send_telegram(f"📊 Ragi Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
+        await _send_telegram(f"📊 MAP TRADE Day Plan: {plan.get('bias')} | Risk: {plan.get('risk_level')}\n{plan.get('reasoning','')}")
         self._market_open = True
 
     def _check_market_open(self) -> bool:
@@ -212,10 +246,23 @@ class LiveTrader:
             store.ai_status = "waiting"
             return
 
-        # Refresh India VIX every tick
-        vix = await asyncio.get_running_loop().run_in_executor(None, get_india_vix)
+        # Cached India VIX (4-min TTL) — was hammering the endpoint every tick
+        vix = await self._cached_vix()
         if vix and vix > 0:
             store.india_vix = vix
+
+        # Session profit-lock trigger: pin every open position's SL to entry.
+        # Fires once per day; keeps entries open (do NOT stop hunting new setups)
+        # but guarantees gains banked so far cannot flip to a loss.
+        profit_lock = TRADING.get("session_profit_lock", 0)
+        if profit_lock and store.realized_pnl >= profit_lock and not self._profit_lock_engaged:
+            self._profit_lock_engaged = True
+            for pos in store.positions:
+                if pos.get("sl", 0) < pos.get("entry", 0):
+                    print(f"[trader] profit-lock @ ₹{store.realized_pnl:.0f} — pinning "
+                          f"{pos['instrument']} {pos['strike']}{pos['type']} SL to entry "
+                          f"{pos['entry']:.2f} (was {pos['sl']:.2f})")
+                    pos["sl"] = round(float(pos["entry"]), 2)
 
         try:
             # Refresh option LTPs for all open positions
@@ -233,17 +280,22 @@ class LiveTrader:
                             await self._exit_position(pos, reason="SL", current_price=ltps[key])
                         elif ltps[key] >= pos["target"]:
                             await self._exit_position(pos, reason="TARGET", current_price=ltps[key])
+                        else:
+                            await self._maybe_partial_book(pos, ltps[key])
 
             for instrument in ["NIFTY", "BANKNIFTY", "SENSEX"]:
                 await self._process_instrument(instrument, time_str)
 
-            # AI-driven trailing SL / exit — ask Claude what to do with each open position
+            # AI-driven manage — ask Claude what to do with EVERY open position
+            # (both profitable AND losing). Previously we only polled the AI on
+            # profitable positions; losing trades were left to grind to full SL
+            # even when the setup had already been invalidated. CUT_EARLY lets
+            # the AI abandon a broken thesis at a small loss instead of taking
+            # the full stop.
             for position in list(store.positions):
                 current_price = store.option_prices.get(
                     f"{position['instrument']}_{position['strike']}_{position['type']}", position["ltp"]
                 )
-                if current_price <= position["entry"]:
-                    continue  # only trail once in profit
                 try:
                     trail = await self.agent.check_trailing_sl(position, current_price)
                 except Exception as e:
@@ -252,13 +304,25 @@ class LiveTrader:
                 t_action = trail.get("action", "HOLD")
                 if t_action == "MOVE_SL":
                     new_sl = trail.get("new_sl")
-                    if isinstance(new_sl, (int, float)) and new_sl > position["sl"] and new_sl < current_price:
+                    if (isinstance(new_sl, (int, float))
+                            and new_sl > position["sl"]
+                            and new_sl < current_price):
                         print(f"[trader] AI trailing SL {position['instrument']} {position['strike']}{position['type']}: "
                               f"{position['sl']:.2f} → {new_sl:.2f} (ltp={current_price:.2f}) | {trail.get('reason','')}")
                         position["sl"] = round(float(new_sl), 2)
                 elif t_action == "EXIT":
-                    print(f"[trader] AI exit signal {position['instrument']} {position['strike']}{position['type']} | {trail.get('reason','')}")
+                    print(f"[trader] AI exit (profitable) {position['instrument']} {position['strike']}{position['type']} | {trail.get('reason','')}")
                     await self._exit_position(position, reason="AI_EXIT", current_price=current_price)
+                elif t_action == "CUT_EARLY":
+                    # Only honour CUT_EARLY when the position is genuinely under
+                    # water or flat — never let the AI abandon a winner via this
+                    # path; that's what EXIT is for.
+                    if current_price <= position["entry"]:
+                        print(f"[trader] AI cut-early {position['instrument']} {position['strike']}{position['type']} "
+                              f"@ {current_price:.2f} (entry {position['entry']:.2f}) | {trail.get('reason','')}")
+                        await self._exit_position(position, reason="AI_CUT_EARLY", current_price=current_price)
+                    else:
+                        print("[trader] ignoring CUT_EARLY on profitable trade — treat as HOLD")
 
         except Exception as e:
             import traceback
@@ -290,7 +354,7 @@ class LiveTrader:
                 failed.append(label)
                 print(f"[trader] EMERGENCY square-off FAILED for {label}: {e}")
 
-        msg = f"[Ragi] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
+        msg = f"[MAP TRADE] Emergency square-off triggered. Closed {closed} position(s). Bot paused."
         if failed:
             msg += (f"\n⚠️ FAILED to close {len(failed)}: {', '.join(failed)} — "
                     "CHECK YOUR BROKER TERMINAL MANUALLY.")
@@ -614,9 +678,22 @@ class LiveTrader:
                 return
             log.guard_pass("CorrelatedEntry", "no correlated entries in last 5 min")
 
+            # AI-selected strike offset (-2..+2) and expiry preference ("current" | "next").
+            # Both are optional in the schema (defaults 0 / "current"), so pre-schema
+            # decisions and older Ollama replies still work unchanged.
+            ai_strike_offset = int(decision.get("strike_offset", 0) or 0)
+            ai_strike_offset = max(-2, min(2, ai_strike_offset))
+            ai_expiry_pref = str(decision.get("expiry_pref", "current") or "current").lower()
+            if ai_expiry_pref not in ("current", "next"):
+                ai_expiry_pref = "current"
+
             opt_data = await asyncio.get_running_loop().run_in_executor(
-                None, get_live_option_from_chain, instrument_key, spot_price, option_type, step
+                None, get_live_option_from_chain,
+                instrument_key, spot_price, option_type, step,
+                ai_strike_offset, ai_expiry_pref,
             )
+            log.info("StrikePick",
+                     f"offset={ai_strike_offset:+d} expiry_pref={ai_expiry_pref}")
             if not opt_data:
                 log.guard_block("OptionChain", "no ATM option found in chain")
                 log.finalize("SKIP", "no_option_data")
@@ -641,7 +718,14 @@ class LiveTrader:
             log.info("Slippage", f"quoted={entry_quote} -> fill@ask={entry_price}",
                      quoted=entry_quote, fill=entry_price)
 
-            quantity = calc_quantity(instrument)
+            # Scale position size by AI confidence — conf 7-8 -> 2 lots, 9-10 -> 3 lots.
+            # `check_risk_limits` still enforces max_risk_per_trade and may shrink
+            # the resulting quantity if it exceeds ₹ risk cap.
+            ai_conf = int(decision.get("confidence", 0) or 0)
+            scaled_lots = lots_from_confidence(ai_conf)
+            quantity = calc_quantity(instrument, lots=scaled_lots)
+            if scaled_lots > TRADING.get("lots", 1):
+                log.info("SizeScaling", f"conf={ai_conf} -> {scaled_lots} lots (base {TRADING.get('lots',1)})")
 
             # AI-provided SL/target from decision; fallback to % of entry if omitted
             ai_sl  = decision.get("sl_premium")
@@ -655,6 +739,43 @@ class LiveTrader:
             else:
                 target = round(entry_price * (1 + TRADING.get("fallback_target_pct", 0.60)), 2)
             log.info("AI_SL_TP", f"sl={sl} tgt={target} (ai_sl={ai_sl} ai_tgt={ai_tgt})")
+
+            # ── Hard gates + EV filter (plug the naked-buy -EV leak) ─────────
+            # Cheap, explicit gates BEFORE committing capital. Defaults are
+            # loose (conf>=4, VIX<=30) so normal setups pass; they only block
+            # genuinely dangerous extremes and negative-expectancy geometry.
+            from bot.spreads import passes_hard_gates, naked_buy_ev, confidence_to_pwin
+            atm_oi_val = 0.0
+            try:
+                _ce = options_snapshot.get("atm_ce_oi")
+                _pe = options_snapshot.get("atm_pe_oi")
+                atm_oi_val = float(_ce or 0) + float(_pe or 0)
+            except Exception:
+                atm_oi_val = 0.0
+            gates_ok, gate_reason = passes_hard_gates(
+                ai_conf, vix_val, atm_oi_val,
+                min_confidence=TRADING.get("hard_gate_min_conf", 4),
+                vix_ceiling=TRADING.get("hard_gate_vix_ceiling", 30.0),
+                min_liquidity_oi=TRADING.get("hard_gate_min_oi", 0),
+            )
+            if not gates_ok:
+                log.guard_block("HardGate", gate_reason)
+                log.finalize("SKIP", "hard_gate")
+                self._log_skip(instrument, f"Hard gate: {gate_reason}", time_str, log)
+                return
+            log.guard_pass("HardGate", gate_reason)
+
+            if TRADING.get("ev_gate_enabled", True):
+                # Approximate round-trip fee per unit so EV is net of costs.
+                _fee_per_unit = 40.0 / max(1, quantity)
+                ev = naked_buy_ev(entry_price, sl, target,
+                                  confidence_to_pwin(ai_conf), fees_per_unit=_fee_per_unit)
+                if not ev.accept:
+                    log.guard_block("EVGate", ev.reason)
+                    log.finalize("SKIP", "ev_gate")
+                    self._log_skip(instrument, f"EV gate: {ev.reason}", time_str, log)
+                    return
+                log.guard_pass("EVGate", ev.reason)
 
             # Session-level risk limits: profit lock, per-symbol trade cap,
             # consecutive-loss cooldown, and per-trade risk cap (may downsize
@@ -783,6 +904,100 @@ class LiveTrader:
                 if pos["instrument"] == instrument:
                     await self._exit_position(pos, reason="ai_exit")
 
+    async def _maybe_partial_book(self, position: dict, ltp: float):
+        """Book half the position and move SL to breakeven once price has
+        traversed `partial_book_ratio` of the entry-to-target distance. Fires
+        at most once per position, and only when the size is at least 2 lots
+        (a 1-lot position can't be split without dropping to zero)."""
+        if not TRADING.get("partial_book_enabled", False):
+            return
+        if position.get("partial_booked"):
+            return
+        entry  = position.get("entry", 0)
+        target = position.get("target", 0)
+        qty    = position.get("quantity", 0)
+        instr  = position.get("instrument")
+        lot    = LOT_SIZES.get(instr, 0) if instr else 0
+        # need >= 2 lots so half is still a valid tradable qty
+        if not (entry > 0 and target > entry and lot > 0 and qty >= 2 * lot):
+            return
+
+        ratio = float(TRADING.get("partial_book_ratio", 0.60))
+        trigger = entry + (target - entry) * ratio
+        if ltp < trigger:
+            return
+
+        # Split into "half we book now" and "rest we let ride". Half must be a
+        # whole-lot multiple; round down so we never over-book.
+        half_lots = max(1, (qty // lot) // 2)
+        book_qty  = half_lots * lot
+        keep_qty  = qty - book_qty
+        if book_qty <= 0 or keep_qty <= 0:
+            return
+
+        # Book the "half" as an independent exit — full fee stack, real slippage.
+        vix_val = getattr(store, "india_vix", 15.0)
+        vix_val = vix_val if isinstance(vix_val, (int, float)) and vix_val > 0 else 15.0
+        exit_quote = ltp
+        exit_fill  = apply_slippage(ltp, "sell", vix=vix_val) if not position.get("is_live") else ltp
+        breakdown  = realistic_pnl(entry, exit_fill, book_qty)
+        pnl_raw    = breakdown["pnl_raw"]
+        pnl_final  = breakdown["pnl_final"]
+        fees_total = breakdown["fees"]["total"]
+        slippage_cost = round((exit_quote - exit_fill) * book_qty, 2)
+
+        store.realized_pnl   += pnl_final
+        store.cumulative_pnl += pnl_final
+
+        # Shrink the live position to the remainder, tighten SL to breakeven so
+        # the "runner" is now a free trade. Flag is set BEFORE any await so the
+        # concurrent sl_monitor / tick loops can never double-book the same
+        # position (cooperative scheduling only yields at awaits).
+        position["quantity"]       = keep_qty
+        position["partial_booked"] = True
+        if position.get("sl", 0) < entry:
+            position["sl"] = round(float(entry), 2)
+
+        # Keep DB rows internally consistent: the parent trade row becomes the
+        # runner (quantity reduced to keep_qty, still open); a separate CLOSED
+        # row records the booked half. Neither row double-counts quantity.
+        exit_time = datetime.now(IST).isoformat()
+        try:
+            parent_id = position.get("trade_db_id")
+            if parent_id:
+                await db.update_trade_quantity(parent_id, keep_qty)
+            await db.insert_trade({
+                "trade_type":   "paper" if not position.get("is_live") else "live",
+                "instrument":   position["instrument"],
+                "action":       position.get("action", f"BUY_{position['type']}"),
+                "strike":       position["strike"],
+                "expiry":       position["expiry"],
+                "entry_time":   position["entry_time"],
+                "entry_price":  entry,
+                "exit_time":    exit_time,
+                "exit_price":   exit_fill,
+                "exit_reason":  "PARTIAL_BOOK",
+                "quantity":     book_qty,
+                "pnl_raw":      pnl_raw,
+                "pnl_final":    pnl_final,
+                "fees_total":   fees_total,
+                "slippage_cost": slippage_cost,
+                "signal_id":    position.get("signal_id"),
+            })
+        except Exception as e:
+            print(f"[trader] partial-book DB write failed: {e}")
+
+        print(f"[trader] PARTIAL BOOK {position['instrument']} {position['strike']}{position['type']} "
+              f"— booked {book_qty}/{qty} @ {exit_fill:.2f} net=₹{pnl_final:.0f}; "
+              f"runner qty={keep_qty} with SL=entry (₹{entry:.2f}) toward tgt ₹{position['target']:.2f}")
+        try:
+            await _send_telegram(
+                f"💰 Partial book {position['instrument']} {position['strike']}{position['type']}: "
+                f"+₹{pnl_final:.0f} on {book_qty} qty. Runner {keep_qty} qty rides to ₹{position['target']:.2f}."
+            )
+        except Exception:
+            pass
+
     async def _exit_position(self, position: dict, reason: str, current_price: float = None):
         if current_price is None:
             current_price = position.get("ltp", position["entry"])
@@ -877,6 +1092,8 @@ class LiveTrader:
                         print(f"[sl_monitor] TARGET HIT {pos['instrument']} {pos['strike']}{pos['type']} "
                               f"ltp={ltp:.2f} tgt={pos['target']:.2f}")
                         await self._exit_position(pos, reason="TARGET", current_price=ltp)
+                    else:
+                        await self._maybe_partial_book(pos, ltp)
             except Exception as e:
                 print(f"[sl_monitor] error: {e}")
 
@@ -887,7 +1104,7 @@ class LiveTrader:
         summary = store.get_daily_summary()
         print(f"[trader] EOD Summary: {summary}")
         await _send_telegram(
-            f"📈 Ragi EOD\n"
+            f"📈 MAP TRADE EOD\n"
             f"P&L=₹{summary['total']:,.0f}  Positions={summary['positions']}"
         )
         store.reset_daily()
@@ -895,4 +1112,6 @@ class LiveTrader:
         self._recent_entries = []
         self._market_open = False
         self._daily_loss_breaker_hit = False
+        self._profit_lock_engaged = False   # reset daily — else next day pins SLs at open
         self._expiries_cache = {}
+        self._vix_cache = (0.0, 0.0)        # force a fresh VIX read tomorrow

@@ -31,8 +31,13 @@ def test_basic_calcs():
 
 
 def test_max_positions():
+    # Read the configured cap rather than hardcoding it — the limit was raised
+    # from 2 to 3 to let the bot hold more concurrent setups, and the test must
+    # track the config, not a stale literal.
+    cap = TRADING["max_positions"]
     assert max_positions_reached([]) is False
-    assert max_positions_reached([1, 2]) is True
+    assert max_positions_reached(list(range(cap - 1))) is False
+    assert max_positions_reached(list(range(cap))) is True
 
 
 @pytest.mark.asyncio
@@ -43,12 +48,18 @@ async def test_check_risk_limits(mock_get_today):
     TRADING["consecutive_loss_limit"] = 2
     TRADING["max_risk_per_trade"] = 1000
     
-    # 1. Test Profit Lock
+    # 1. Profit lock no longer BLOCKS new entries. By design the session
+    # profit-lock now only pins open positions' SL to breakeven (handled in the
+    # trader loop), so the bot keeps hunting fresh setups after a good morning
+    # instead of going dead for the rest of the day. Use inputs that trip NO
+    # other limit (empty trade history, tight risk within the cap) so this
+    # isolates profit-lock behaviour: entries above the lock must be allowed.
+    mock_get_today.return_value = []
     store.realized_pnl = 6000
-    allowed, reason, qty = await check_risk_limits("NIFTY", "BUY_CE", 100.0, 80.0, 65)
-    assert allowed is False
-    assert "profit lock" in reason.lower()
-    
+    allowed, reason, qty = await check_risk_limits("NIFTY", "BUY_CE", 100.0, 95.0, 65)
+    assert allowed is True
+    assert "profit lock" not in reason.lower()
+
     store.realized_pnl = 0.0
     
     # 2. Test Max Trades Per Symbol

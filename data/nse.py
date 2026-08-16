@@ -155,6 +155,80 @@ class NSEClient:
             "nearest_expiry": nearest,
         }
 
+    def get_option_chain_rows(self, symbol: str) -> dict:
+        """Full per-strike option chain for the dashboard table.
+
+        Returns {symbol, spot, atm, expiry, pcr, pcr_volume, max_pain,
+        atm_iv, rows:[{strike, ce:{...}, pe:{...}}]}. Rows are limited to the
+        nearest expiry and sorted by strike. Each CE/PE carries ltp, oi,
+        chg_oi, iv, volume, turnover, bid, ask so the pulse/activity panels
+        derive everything from a single source instead of guessing."""
+        sym = symbol.upper().replace(" ", "")
+        nse_sym = _OC_SYMBOL_MAP.get(sym, sym)
+        data = self._get(f"/api/option-chain-indices?symbol={nse_sym}")
+
+        records  = data.get("records") or {}
+        spot     = float(records.get("underlyingValue") or 0)
+        expiries = records.get("expiryDates") or []
+        nearest  = expiries[0] if expiries else None
+        raw_rows = records.get("data") or []
+
+        step = _ATM_STEP.get(sym, 50)
+        atm  = round(spot / step) * step if spot else 0
+
+        def _leg(opt: dict) -> dict:
+            ltp = float(opt.get("lastPrice") or 0)
+            vol = float(opt.get("totalTradedVolume") or 0)
+            return {
+                "ltp":     ltp,
+                "oi":      float(opt.get("openInterest") or 0),
+                "chg_oi":  float(opt.get("changeinOpenInterest") or 0),
+                "iv":      float(opt.get("impliedVolatility") or 0),
+                "volume":  vol,
+                "turnover": ltp * vol,      # premium notional proxy
+                "bid":     float(opt.get("bidprice") or 0),
+                "ask":     float(opt.get("askPrice") or 0),
+            }
+
+        rows: list[dict] = []
+        ce_oi_total = pe_oi_total = 0.0
+        ce_vol_total = pe_vol_total = 0.0
+        pain_map: dict[int, float] = {}
+        atm_iv = 0.0
+        for row in raw_rows:
+            if nearest and row.get("expiryDate") != nearest:
+                continue
+            strike = int(row.get("strikePrice") or 0)
+            ce = row.get("CE") or {}
+            pe = row.get("PE") or {}
+            ce_leg = _leg(ce) if ce else {}
+            pe_leg = _leg(pe) if pe else {}
+            rows.append({"strike": strike, "ce": ce_leg, "pe": pe_leg})
+            ce_oi_total += ce_leg.get("oi", 0)
+            pe_oi_total += pe_leg.get("oi", 0)
+            ce_vol_total += ce_leg.get("volume", 0)
+            pe_vol_total += pe_leg.get("volume", 0)
+            pain_map[strike] = pain_map.get(strike, 0) + ce_leg.get("oi", 0) + pe_leg.get("oi", 0)
+            if strike == atm:
+                atm_iv = ce_leg.get("iv", 0) or pe_leg.get("iv", 0)
+
+        rows.sort(key=lambda r: r["strike"])
+        pcr        = round(pe_oi_total / ce_oi_total, 3) if ce_oi_total > 0 else None
+        pcr_volume = round(pe_vol_total / ce_vol_total, 3) if ce_vol_total > 0 else None
+        max_pain   = max(pain_map, key=pain_map.get) if pain_map else atm
+
+        return {
+            "symbol":     sym,
+            "spot":       spot,
+            "atm":        atm,
+            "expiry":     nearest,
+            "pcr":        pcr,
+            "pcr_volume": pcr_volume,
+            "max_pain":   max_pain,
+            "atm_iv":     round(atm_iv, 2),
+            "rows":       rows,
+        }
+
     # ── Index Daily History ───────────────────────────────────────────────────
 
     def get_index_history(

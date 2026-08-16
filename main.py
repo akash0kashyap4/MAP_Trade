@@ -31,6 +31,7 @@ from ai.news import NewsBrain
 from ai.reporter import DailyReporter
 from bot.trader import LiveTrader
 from routers.routes import router as api_router
+from routers.dashboard import router as dashboard_router
 from routers.sse import sse_endpoint
 from scheduler import setup_scheduler
 from groww.live_feed import start_feed
@@ -80,6 +81,17 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("[main] DB initialized")
 
+    # Wire the data-layer circuit breaker's alert sink to Telegram. The sink is
+    # called from executor threads on the data path, so we use the synchronous
+    # send_telegram (a plain requests.post) rather than the async helper.
+    try:
+        from data.health import set_alert_sink
+        from groww.oauth import send_telegram as _sync_telegram
+        set_alert_sink(lambda msg: _sync_telegram(msg))
+        print("[main] Data-health alerting wired to Telegram")
+    except Exception as e:
+        print(f"[main] WARNING: could not wire data-health alerting: {e}")
+
     try:
         from data.database import get_today_realized_pnl, get_total_realized_pnl
         store.cumulative_pnl = await get_total_realized_pnl()
@@ -87,6 +99,19 @@ async def lifespan(app: FastAPI):
         print(f"[main] Cumulative P&L: ₹{store.cumulative_pnl:,.2f} | Today: ₹{store.realized_pnl:,.2f}")
     except Exception as e:
         print(f"[main] WARNING: Could not load P&L from DB: {e}")
+
+    # Apply any rules the learner has persisted from previous nightly reviews
+    # BEFORE the agent starts serving decisions. Otherwise every fresh boot
+    # ignores the last N days of learning and starts from stock defaults.
+    try:
+        from ai.learner import load_persisted_rules
+        from data.database import get_latest_rules
+        from config import TRADING
+        _applied = await load_persisted_rules(get_latest_rules, TRADING)
+        if _applied:
+            print(f"[main] Learner rules applied at boot: {_applied}")
+    except Exception as e:
+        print(f"[main] WARNING: Could not apply learned rules at boot: {e}")
 
     agent      = TradingAgent()
     trader     = LiveTrader(agent)
@@ -153,7 +178,7 @@ class _DBProxy:
 
 
 app = FastAPI(
-    title="Ragi Trading Bot",
+    title="MAP TRADE Bot",
     lifespan=lifespan,
     # In production the interactive docs and raw schema are disabled so the
     # private API surface (incl. trading-control endpoints) is not published.
@@ -168,6 +193,9 @@ app = FastAPI(
 # how ~20 routes shipped open. The only public POST /api/login is declared
 # directly on `app` below, so it is unaffected by this dependency.
 app.include_router(api_router, prefix="/api", dependencies=[Depends(require_user)])
+# Dashboard-v2 endpoints — same auth policy, own prefix. Registered separately
+# so removing v2 is a one-line revert without touching the legacy routes.
+app.include_router(dashboard_router, dependencies=[Depends(require_user)])
 
 
 @app.middleware("http")
@@ -379,6 +407,33 @@ async def dashboard(request: Request):
     if not await check_session(request):
         return RedirectResponse("/")
     return FileResponse(BASE_DIR / "dashboard" / "index.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2")
+async def dashboard_v2_hub(request: Request):
+    """MAP TRADE landing hub — user picks Paper Trade or AI Trader."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "hub.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2/ai")
+async def dashboard_v2_ai(request: Request):
+    """AI Trader console (the autonomous bot dashboard)."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "index_v2.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/dashboard/v2/paper")
+async def dashboard_v2_paper(request: Request):
+    """Manual Paper Trade console (option chain + trade drawer)."""
+    if not await check_session(request):
+        return RedirectResponse("/")
+    return FileResponse(BASE_DIR / "dashboard" / "paper.html",
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 

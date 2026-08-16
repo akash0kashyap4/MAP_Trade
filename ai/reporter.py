@@ -146,7 +146,7 @@ class DailyReporter:
             try:
                 grade = (ai_json or {}).get("self_grade", "—")
                 await notify_fn(
-                    f"📋 Ragi Daily Report [{date}]\n"
+                    f"📋 MAP TRADE Daily Report [{date}]\n"
                     f"Trades: {stats['n_trades']} | WR: {stats['win_rate']:.0f}% | "
                     f"P&L: ₹{stats['realized_pnl']:,.0f}\n"
                     f"Grade: {grade}"

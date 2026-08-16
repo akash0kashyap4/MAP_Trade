@@ -193,9 +193,9 @@ async def groww_health():
     """Ping Groww API and return connection status."""
     result = check_api_connection()
     if result["ok"]:
-        send_telegram("[Ragi] Groww API health check OK.")
+        send_telegram("[MAP TRADE] Groww API health check OK.")
     else:
-        send_telegram(f"[Ragi] Groww API health check FAILED: {result['message']}")
+        send_telegram(f"[MAP TRADE] Groww API health check FAILED: {result['message']}")
     return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
@@ -334,6 +334,20 @@ async def save_custom_strategy(defn: dict):
 @router.get("/status")
 async def status():
     return store.sse_payload()
+
+
+@router.get("/data/health")
+async def data_health():
+    """Data-layer circuit-breaker state: which sources are open, whether the
+    app is serving mock data, and overall degraded/healthy status. Lets an
+    operator (or an uptime probe) see honestly whether live prices can be
+    trusted rather than reading a green 'live' badge over stale/mock data."""
+    try:
+        from data.health import snapshot
+        return snapshot()
+    except Exception as e:
+        return JSONResponse(status_code=200,
+                            content={"status": "unknown", "error": str(e)})
 
 
 @router.get("/trades/today")
@@ -970,7 +984,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
     print(msg)
     try:
-        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[Ragi] {msg}")
+        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[MAP TRADE] {msg}")
     except Exception:
         pass
 

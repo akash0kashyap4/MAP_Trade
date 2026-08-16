@@ -305,6 +305,12 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
                 store.using_mock_chain = False
             except ImportError:
                 pass
+            try:
+                from data.health import record_success, set_serving_mock
+                record_success("groww_chain")
+                set_serving_mock(False)
+            except Exception:
+                pass
 
             atm = round_to_atm(spot, step)
             ce_oi_total = pe_oi_total = 0
@@ -342,9 +348,13 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
                 "oi_change":   round(atm_pe_oi - atm_ce_oi, 0),
                 "days_to_exp": days_to_exp,
             }
-    except Exception:
+    except Exception as groww_err:
         # Expected if token lacks options subscription/permissions
-        pass
+        try:
+            from data.health import record_failure
+            record_failure("groww_chain", str(groww_err))
+        except Exception:
+            pass
 
     # NSE Fallback — real option chain data from nseindia.com
     try:
@@ -353,6 +363,12 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
         chain = get_nse_client().get_option_chain(nse_sym)
         if chain and chain.get("pcr"):
             days_to_exp = max(0, (datetime.strptime(expiry, "%Y-%m-%d").date() - date.today()).days)
+            try:
+                from data.health import record_success, set_serving_mock
+                record_success("nse_chain")
+                set_serving_mock(False)
+            except Exception:
+                pass
             return {
                 "pcr":         chain["pcr"],
                 "max_pain":    chain["max_pain"],
@@ -365,12 +381,23 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
             }
     except Exception as nse_err:
         print(f"[historical] NSE option chain fallback failed: {nse_err}")
+        try:
+            from data.health import record_failure
+            record_failure("nse_chain", str(nse_err))
+        except Exception:
+            pass
 
-    # Option Chain Mock Fallback (last resort)
+    # Option Chain Mock Fallback (last resort) — flag the layer as degraded so
+    # the dashboard and Telegram both know we are NOT on live data.
     try:
         from data.store import store
         store.using_mock_chain = True
     except ImportError:
+        pass
+    try:
+        from data.health import set_serving_mock
+        set_serving_mock(True)
+    except Exception:
         pass
 
     try:
@@ -396,11 +423,93 @@ def get_option_chain_analytics(instrument_key: str, spot: float, expiry: str, st
     return {}
 
 
-def get_live_option_from_chain(instrument_key: str, spot: float, option_type: str, step: int) -> dict:
+def get_option_chain_rows(instrument_key: str, spot: float, expiry: str, step: int) -> dict:
+    """Full per-strike option chain from Groww for the dashboard table.
+
+    Mirrors data.nse.NSEClient.get_option_chain_rows so the dashboard can use
+    either source with one shape: {spot, atm, expiry, pcr, max_pain, atm_iv,
+    rows:[{strike, ce, pe}]}. Used for SENSEX (not on NSE's index chain) and
+    as a Groww-first path for Nifty/BankNifty. Returns {} on any failure so
+    the caller can fall back to NSE or mock cleanly."""
+    try:
+        groww = get_groww_client()
+        exchange, _, symbol = _INSTRUMENT_MAP.get(
+            instrument_key, (_EXCHANGE_NSE, _SEGMENT_FNO, instrument_key.split("|")[-1])
+        )
+        clean_symbol = symbol.replace(" ", "")
+        chain_data = groww.get_option_chain(
+            exchange=exchange, underlying=clean_symbol, expiry_date=expiry,
+        )
+        contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
+        if not contracts:
+            return {}
+
+        atm = round_to_atm(spot, step)
+
+        def _leg(opt: dict) -> dict:
+            ltp = float(opt.get("ltp", opt.get("lastPrice", 0)) or 0)
+            vol = float(opt.get("volume", opt.get("traded_volume", 0)) or 0)
+            return {
+                "ltp":      ltp,
+                "oi":       float(opt.get("open_interest", opt.get("openInterest", 0)) or 0),
+                "chg_oi":   float(opt.get("oi_change", opt.get("changeinOpenInterest", 0)) or 0),
+                "iv":       float(opt.get("implied_volatility", opt.get("impliedVolatility", 0)) or 0),
+                "volume":   vol,
+                "turnover": ltp * vol,
+                "bid":      float(opt.get("bid_price", opt.get("bidprice", 0)) or 0),
+                "ask":      float(opt.get("ask_price", opt.get("askPrice", 0)) or 0),
+            }
+
+        rows: list[dict] = []
+        ce_oi_total = pe_oi_total = 0.0
+        pain_map: dict[int, float] = {}
+        atm_iv = 0.0
+        for row in contracts:
+            strike = int(row.get("strike_price", row.get("strikePrice", 0)) or 0)
+            if not strike:
+                continue
+            ce = row.get("call_options", row.get("callOptions", {})) or {}
+            pe = row.get("put_options",  row.get("putOptions",  {})) or {}
+            ce_leg = _leg(ce) if ce else {}
+            pe_leg = _leg(pe) if pe else {}
+            rows.append({"strike": strike, "ce": ce_leg, "pe": pe_leg})
+            ce_oi_total += ce_leg.get("oi", 0)
+            pe_oi_total += pe_leg.get("oi", 0)
+            pain_map[strike] = pain_map.get(strike, 0) + ce_leg.get("oi", 0) + pe_leg.get("oi", 0)
+            if strike == atm:
+                atm_iv = ce_leg.get("iv", 0) or pe_leg.get("iv", 0)
+
+        rows.sort(key=lambda r: r["strike"])
+        pcr      = round(pe_oi_total / ce_oi_total, 3) if ce_oi_total > 0 else None
+        max_pain = max(pain_map, key=pain_map.get) if pain_map else atm
+        return {
+            "spot": spot, "atm": atm, "expiry": expiry,
+            "pcr": pcr, "pcr_volume": None, "max_pain": max_pain,
+            "atm_iv": round(atm_iv, 2), "rows": rows,
+        }
+    except Exception:
+        return {}
+
+
+def get_live_option_from_chain(
+    instrument_key: str,
+    spot: float,
+    option_type: str,
+    step: int,
+    strike_offset: int = 0,
+    expiry_pref: str = "current",
+) -> dict:
     """
-    Find the ATM option for a given instrument/type and return LTP + metadata.
-    Falls back to a realistic mock option pricing model (Black-Scholes approximation)
-    if Groww API access to option chains is restricted/forbidden.
+    Find an option for a given instrument/type and return LTP + metadata.
+
+    strike_offset: 0 = ATM, negative = ITM (below spot for CE / above for PE),
+                   positive = OTM. Applied in units of `step`.
+    expiry_pref:   "current" = nearest available weekly (default).
+                   "next"    = SKIP the nearest and use the following weekly
+                               (lower theta for Mon/Tue swing entries).
+
+    Falls back to a mock Black-Scholes-like pricing model if Groww's option
+    chain endpoint is unavailable.
     """
     try:
         groww = get_groww_client()
@@ -408,9 +517,16 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
             instrument_key, (_EXCHANGE_NSE, _SEGMENT_FNO, instrument_key.split("|")[-1])
         )
         clean_symbol = symbol.replace(" ", "")
-        atm_strike = round_to_atm(spot, step)
+        base_strike = round_to_atm(spot, step)
+        # ITM for CE = strike below spot; ITM for PE = strike above spot.
+        if option_type == "CE":
+            target_strike = base_strike + int(strike_offset) * step
+        else:
+            target_strike = base_strike - int(strike_offset) * step
 
-        for days_ahead in range(0, 8):
+        # Collect valid expiry dates in order, then pick per expiry_pref.
+        found_expiries: list[str] = []
+        for days_ahead in range(0, 15):
             expiry_date = (date.today() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
             try:
                 chain_data = groww.get_option_chain(
@@ -421,11 +537,39 @@ def get_live_option_from_chain(instrument_key: str, spot: float, option_type: st
                 contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
                 if not contracts:
                     continue
+                found_expiries.append(expiry_date)
+            except Exception:
+                continue
+
+        ordered_expiries: list[str]
+        if expiry_pref == "next" and len(found_expiries) >= 2:
+            # prefer the second-nearest, but fall back to nearest if 2nd fetch fails
+            ordered_expiries = [found_expiries[1], found_expiries[0]] + found_expiries[2:]
+        else:
+            ordered_expiries = found_expiries
+
+        for expiry_date in ordered_expiries:
+            try:
+                chain_data = groww.get_option_chain(
+                    exchange=exchange,
+                    underlying=clean_symbol,
+                    expiry_date=expiry_date,
+                )
+                contracts = chain_data if isinstance(chain_data, list) else chain_data.get("data", [])
+                if not contracts:
+                    continue
+
+                # First try the requested strike; if not present, fall back to ATM.
+                atm_strike = base_strike
+                strike_candidates = [target_strike]
+                if target_strike != atm_strike:
+                    strike_candidates.append(atm_strike)
 
                 for row in contracts:
                     strike = int(row.get("strike_price", row.get("strikePrice", 0)))
-                    if strike != atm_strike:
+                    if strike not in strike_candidates:
                         continue
+                    atm_strike = strike  # reused as return value below
 
                     key = "call_options" if option_type == "CE" else "put_options"
                     alt_key = "callOptions" if option_type == "CE" else "putOptions"

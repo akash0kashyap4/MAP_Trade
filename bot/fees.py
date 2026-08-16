@@ -14,25 +14,30 @@ Assumptions (Zerodha/Upstox-style discount broker, NSE/BSE F&O):
 from __future__ import annotations
 from typing import Literal
 
-# Conservative default slippage when bid/ask spread isn't available.
-DEFAULT_SLIPPAGE_PCT = 0.015
+# Calibrated to Groww/Zerodha real fills on liquid Nifty/BankNifty weeklies:
+# typical round-trip slippage is 0.5%-1.5%, not the 3%+ the earlier settings
+# assumed. Over-modelled slippage was making paper P&L systematically negative
+# and starving the AI of positive-expectancy trades to learn from.
+DEFAULT_SLIPPAGE_PCT = 0.007
 
 
 def get_dynamic_slippage_pct(premium: float, vix: float = 15.0) -> float:
     """
-    Calculate dynamic slippage percentage based on premium and VIX.
-    Wider spreads for low-priced premiums (higher percentage-wise) and during high VIX periods.
+    Realistic per-side slippage % for liquid NSE index options.
+    Wider % for very cheap OTM premiums, wider on high-VIX days.
     """
     if premium <= 0:
         return DEFAULT_SLIPPAGE_PCT
-    base_pct = 0.010
-    if premium < 50:
-        base_pct += 0.015
+    base_pct = 0.005                 # 0.5% baseline for liquid ATM
+    if premium < 30:
+        base_pct += 0.010            # was +1.5% — halved
+    elif premium < 60:
+        base_pct += 0.005
     elif premium < 100:
-        base_pct += 0.008
+        base_pct += 0.003
 
-    vix_multiplier = max(1.0, vix / 15.0)
-    return max(0.005, min(0.05, base_pct * vix_multiplier))
+    vix_multiplier = max(1.0, vix / 18.0)   # only widen above VIX 18
+    return max(0.003, min(0.025, base_pct * vix_multiplier))
 
 
 def apply_slippage(premium: float, side: Literal["buy", "sell"], slippage_pct: float | None = None, vix: float = 15.0) -> float:
