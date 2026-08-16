@@ -27,6 +27,9 @@ html,body{height:100%;overflow:hidden;background:#09090B;font-family:'Inter',sys
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:4px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
 
+/* ── Keyboard focus indicator (visible only for keyboard/Tab users) ── */
+a:focus-visible,button:focus-visible,[data-nav]:focus-visible,[data-btab]:focus-visible,.tf-btn:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid rgba(99,102,241,.75);outline-offset:2px}
+
 /* ── Sidebar nav buttons ── */
 [data-nav]{transition:background .15s,color .15s;border:none;cursor:pointer;font-family:inherit;background:transparent;padding:0}
 [data-nav].is-active{background:rgba(99,102,241,.14)!important;color:#6366F1!important;box-shadow:inset 3px 0 0 #6366F1}
@@ -1022,12 +1025,16 @@ function requestModeSwitch(mode) {
       confirmInput.oninput = function() {
         confirmBtn.disabled = (confirmInput.value !== 'GO LIVE');
       };
+      confirmInput.onkeydown = function(ev) {
+        if (ev.key === 'Enter' && !confirmBtn.disabled) { ev.preventDefault(); confirmBtn.click(); }
+      };
 
       confirmBtn.onclick = function() {
         closeModeModal();
         _performModeSwitch('live', 'GO LIVE');
       };
       modal.style.display = 'flex';
+      setTimeout(function(){ confirmInput.focus(); }, 50);
     }
   } else {
     var inputContainer = document.getElementById('mode-confirm-input-container');
@@ -1862,12 +1869,16 @@ function confirmSquareOff() {
     confirmInput.oninput = function() {
       confirmBtn.disabled = (confirmInput.value !== 'SQUARE-OFF');
     };
+    confirmInput.onkeydown = function(ev) {
+      if (ev.key === 'Enter' && !confirmBtn.disabled) { ev.preventDefault(); confirmBtn.click(); }
+    };
 
     confirmBtn.onclick = function() {
       closeSquareOffModal();
       _performSquareOff('SQUARE-OFF');
     };
     modal.style.display = 'flex';
+    setTimeout(function(){ confirmInput.focus(); }, 50);
   }
 }
 
@@ -2707,6 +2718,23 @@ setInterval(function(){ if(currentCandles && currentCandles.length) drawChart();
 // ════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════
+// Modal dismissal: click the backdrop to cancel, or press Escape to close
+// any open modal — expected behavior for role="alertdialog" dialogs.
+(function(){
+  var MODALS = ['dl-modal','mode-modal','squareoff-modal'];
+  ['mode-modal','squareoff-modal'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', function(ev){ if (ev.target === el) el.style.display = 'none'; });
+  });
+  document.addEventListener('keydown', function(ev){
+    if (ev.key !== 'Escape') return;
+    MODALS.forEach(function(id){
+      var el = document.getElementById(id);
+      if (el && el.style.display !== 'none' && el.style.display !== '') el.style.display = 'none';
+    });
+  });
+})();
+
 setNav('Dashboard');
 setTab('log');
 loadRiskConfig();
