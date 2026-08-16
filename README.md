@@ -115,6 +115,31 @@ The NSE 2026 trading-holiday list is baked into `config.NSE_HOLIDAYS` and used b
 
 ---
 
+## Data reliability & health
+
+Market data comes from unofficial NSE and Groww endpoints with a mock generator
+as a last-resort fallback. A **data-layer circuit breaker** (`data/health.py`)
+makes degradation honest and loud instead of silently serving mock data behind a
+green "live" badge:
+
+- Each source (`feed`, `groww_chain`, `groww_options`, `nse_chain`) trips OPEN
+  after 3 consecutive failures and closes on the next success.
+- The layer is **DEGRADED** when any critical source is open, or when the mock
+  generator is in use.
+- On the healthy→degraded transition (and again on recovery) a **single**
+  Telegram alert fires — never per-tick spam.
+- The dashboards show a red **"DATA DEGRADED — prices are NOT live"** banner and
+  flip the feed health dot red; the SSE payload carries a `data_health` block.
+- Operators (or an uptime probe) can query `GET /api/data/health` for the full
+  circuit snapshot: which sources are open, per-source counters, whether mock
+  data is being served, and overall `healthy`/`degraded` status.
+
+**Treat a DEGRADED alert as "do not trust signals."** Live prices are unreliable
+until the layer recovers. Adding a licensed/paid data feed as a hot-fallback
+source is the remaining step to full reliability (see `SCORECARD.md`).
+
+---
+
 ## AI Provider Abstraction
 
 Every model call goes through the provider abstraction (`ai/providers/*`) — the

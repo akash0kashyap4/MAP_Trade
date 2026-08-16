@@ -82,6 +82,11 @@ async def start_feed():
                 for instrument, ltp in ltps.items():
                     store.update_price(instrument, ltp)
                 store.feed_status = "live"
+                try:
+                    from data.health import record_success
+                    record_success("feed")
+                except Exception:
+                    pass
                 print("[groww.feed] Prices: " +
                       " | ".join(f"{k}={v:,.2f}" for k, v in ltps.items()))
 
@@ -122,10 +127,20 @@ async def start_feed():
                     print(f"[groww.feed] broadcast error: {bcast_err}")
             else:
                 store.feed_status = "error"
+                try:
+                    from data.health import record_failure
+                    record_failure("feed", "empty LTP response")
+                except Exception:
+                    pass
 
         except Exception as e:
             print(f"[groww.feed] Poll error: {e}")
             store.feed_status = "error"
+            try:
+                from data.health import record_failure
+                record_failure("feed", str(e))
+            except Exception:
+                pass
             # On mobile networks, transient failures are common; back off briefly
             await asyncio.sleep(5)
 

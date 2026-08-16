@@ -322,7 +322,7 @@ class LiveTrader:
                               f"@ {current_price:.2f} (entry {position['entry']:.2f}) | {trail.get('reason','')}")
                         await self._exit_position(position, reason="AI_CUT_EARLY", current_price=current_price)
                     else:
-                        print(f"[trader] ignoring CUT_EARLY on profitable trade — treat as HOLD")
+                        print("[trader] ignoring CUT_EARLY on profitable trade — treat as HOLD")
 
         except Exception as e:
             import traceback

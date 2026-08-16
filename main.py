@@ -81,6 +81,17 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("[main] DB initialized")
 
+    # Wire the data-layer circuit breaker's alert sink to Telegram. The sink is
+    # called from executor threads on the data path, so we use the synchronous
+    # send_telegram (a plain requests.post) rather than the async helper.
+    try:
+        from data.health import set_alert_sink
+        from groww.oauth import send_telegram as _sync_telegram
+        set_alert_sink(lambda msg: _sync_telegram(msg))
+        print("[main] Data-health alerting wired to Telegram")
+    except Exception as e:
+        print(f"[main] WARNING: could not wire data-health alerting: {e}")
+
     try:
         from data.database import get_today_realized_pnl, get_total_realized_pnl
         store.cumulative_pnl = await get_total_realized_pnl()

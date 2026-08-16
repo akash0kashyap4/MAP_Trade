@@ -336,6 +336,20 @@ async def status():
     return store.sse_payload()
 
 
+@router.get("/data/health")
+async def data_health():
+    """Data-layer circuit-breaker state: which sources are open, whether the
+    app is serving mock data, and overall degraded/healthy status. Lets an
+    operator (or an uptime probe) see honestly whether live prices can be
+    trusted rather than reading a green 'live' badge over stale/mock data."""
+    try:
+        from data.health import snapshot
+        return snapshot()
+    except Exception as e:
+        return JSONResponse(status_code=200,
+                            content={"status": "unknown", "error": str(e)})
+
+
 @router.get("/trades/today")
 async def trades_today():
     try:

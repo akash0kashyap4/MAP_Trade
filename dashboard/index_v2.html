@@ -581,13 +581,32 @@ function updateFromSSE(p){
   renderPositions(p.positions || []);
   // Signals
   renderSignals(p.signals || []);
-  // Health dots
-  setHealth('#hFeed', p.feed_status === 'live' ? 'on' : 'warn');
+  // Data-layer health: degraded / serving-mock overrides the feed dot and
+  // shows a loud banner so nobody trusts a green badge over mock data.
+  const dh = p.data_health || {};
+  const degraded = dh.degraded || dh.serving_mock;
+  setHealth('#hFeed', degraded ? 'off' : (p.feed_status === 'live' ? 'on' : 'warn'));
   setHealth('#hAi',   ['analyzing','in_trade','waiting'].includes(p.ai_status) ? 'on' : 'warn');
   setHealth('#hDb',   'on');
   setHealth('#hBroker', p.trading_mode === 'live' ? 'on' : 'warn');
   setHealth('#hNews', p.news ? 'on' : 'warn');
   $('#healthTick').textContent = 'Last tick ' + (p.last_tick || '—') + ' · next ' + (p.next_check || '—');
+  renderDataBanner(dh);
+}
+function renderDataBanner(dh){
+  let el = document.getElementById('dataBanner');
+  const degraded = dh && (dh.degraded || dh.serving_mock);
+  if(!degraded){ if(el) el.remove(); return; }
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'dataBanner';
+    el.style.cssText = 'position:sticky;top:0;z-index:30;background:#c93a2d;color:#fff;'
+      + 'padding:10px 16px;text-align:center;font-size:13px;font-weight:600;letter-spacing:.02em';
+    document.body.insertBefore(el, document.body.firstChild);
+  }
+  const src = (dh.open_sources || []).join(', ');
+  el.textContent = '⚠️ DATA DEGRADED — ' + (dh.serving_mock ? 'serving MOCK data' : ('sources down: ' + src))
+    + '. Prices are NOT live; do not trust signals.';
 }
 function setHealth(sel, state){
   const el = $(sel); if(!el) return;

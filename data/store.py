@@ -212,7 +212,18 @@ class LiveStore:
             "india_vix":     self.india_vix,
             "news":          self.news_insight,
             "option_chain":  self.option_chain,
+            "data_health":   self._data_health_snapshot(),
         }
+
+    def _data_health_snapshot(self) -> dict:
+        """Data-layer circuit-breaker state for the UI. Import is local so the
+        store stays importable even if the health module is unavailable."""
+        try:
+            from data.health import snapshot
+            return snapshot()
+        except Exception:
+            return {"degraded": False, "serving_mock": self.using_mock_data,
+                    "status": "unknown", "open_sources": [], "sources": {}}
 
 
 store = LiveStore()

@@ -145,8 +145,10 @@ async def chain_pulse(instrument: str):
             call_oi_chg    += float(ce.get("chg_oi", 0) or 0)
             put_oi_chg     += float(pe.get("chg_oi", 0) or 0)
             if atm and abs(strike - atm) <= step * 3:
-                if ce.get("iv"): ivs_call.append(float(ce["iv"]))
-                if pe.get("iv"): ivs_put.append(float(pe["iv"]))
+                if ce.get("iv"):
+                    ivs_call.append(float(ce["iv"]))
+                if pe.get("iv"):
+                    ivs_put.append(float(pe["iv"]))
 
     total_turnover = calls_turnover + puts_turnover
     calls_share = round(calls_turnover / total_turnover * 100, 1) if total_turnover else 50.0
@@ -297,8 +299,10 @@ async def daywise_pnl(days: int = 180):
         grid.append({"date": cursor.isoformat(), "pnl": pnl,
                      "weekday": cursor.weekday()})
         total += pnl
-        if pnl > 0: green += 1
-        elif pnl < 0: red += 1
+        if pnl > 0:
+            green += 1
+        elif pnl < 0:
+            red += 1
         cursor += timedelta(days=1)
 
     return {"days": days, "total": round(total, 2),
