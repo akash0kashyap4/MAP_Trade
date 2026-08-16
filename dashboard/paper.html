@@ -162,6 +162,10 @@ main{max-width:1400px;margin:0 auto;padding:20px 24px 60px;display:flex;flex-dir
 
 .footer{color:var(--mute);font-size:11px;text-align:center;padding:24px 0}
 </style>
+<script>
+/* Apply saved theme before first paint (no flash). Unset = follow system. */
+(function(){try{var t=localStorage.getItem('map-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 </head>
 <body>
 
@@ -177,7 +181,7 @@ main{max-width:1400px;margin:0 auto;padding:20px 24px 60px;display:flex;flex-dir
     <a href="/dashboard/v2/ai">AI Trader →</a>
   </nav>
   <div class="tools">
-    <button class="icon-btn" title="Theme" onclick="toggleTheme()">◐</button>
+    <button class="icon-btn" title="Toggle light / dark" onclick="toggleTheme()" data-theme-ico>🌙</button>
     <button class="icon-btn" title="Settings">⚙</button>
     <div class="equity-chip"><span>EQUITY</span><strong id="equity">₹—</strong></div>
     <div class="avatar">AK</div>
@@ -365,9 +369,20 @@ let lotSizes      = {NIFTY:65, BANKNIFTY:30, SENSEX:20};
 let trade         = {strike:null, type:null, side:'BUY', orderType:'MARKET', lots:1, ltp:0};
 
 /* ── Theme ─────────────────────────────────────────────── */
+function currentTheme(){
+  const a = document.documentElement.getAttribute('data-theme');
+  if(a === 'dark' || a === 'light') return a;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+function applyThemeIcon(){
+  const t = currentTheme();
+  document.querySelectorAll('[data-theme-ico]').forEach(el => el.textContent = t === 'dark' ? '☀️' : '🌙');
+}
 function toggleTheme(){
-  const c = document.documentElement.getAttribute('data-theme');
-  document.documentElement.setAttribute('data-theme', c === 'dark' ? 'light' : 'dark');
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('map-theme', next); }catch(e){}
+  applyThemeIcon();
 }
 
 /* ── Instrument + range ────────────────────────────────── */
@@ -616,6 +631,7 @@ function connectSSE(){
 
 /* ── Boot ──────────────────────────────────────────────── */
 async function boot(){
+  applyThemeIcon();
   const s = await api('/api/status'); if(s) onStream(s);
   refreshChain(); refreshPulse(); refreshActivity(); refreshPositions();
   connectSSE();

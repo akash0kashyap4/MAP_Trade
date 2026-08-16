@@ -87,6 +87,10 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;paddin
 .tool{padding:8px 14px;border-radius:20px;background:var(--panel);color:var(--mute);font-size:12px;border:1px solid var(--line)}
 .tool:hover{color:var(--ink)}
 </style>
+<script>
+/* Apply saved theme before first paint (no flash). Unset = follow system. */
+(function(){try{var t=localStorage.getItem('map-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 </head>
 <body>
 
@@ -95,7 +99,7 @@ button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;paddin
   <div class="right">
     <span class="chip" id="marketPill"><span class="dot"></span>Market <span id="marketState">—</span></span>
     <span class="chip" id="equityChip">Equity <b id="equityVal" style="color:var(--ink);margin-left:4px">₹—</b></span>
-    <button class="chip" onclick="toggleTheme()" title="Theme">◐ Theme</button>
+    <button class="chip" onclick="toggleTheme()" title="Toggle light / dark"><span data-theme-ico>🌙</span>&nbsp;Theme</button>
     <div class="avatar" id="userAvatar">AK</div>
   </div>
 </div>
@@ -177,10 +181,22 @@ async function hydrate(){
     document.getElementById('marketState').textContent = p.feed_status === 'live' ? 'LIVE' : (p.bot_paused ? 'PAUSED' : 'IDLE');
   }catch(e){}
 }
-function toggleTheme(){
-  const c = document.documentElement.getAttribute('data-theme');
-  document.documentElement.setAttribute('data-theme', c === 'dark' ? 'light' : 'dark');
+function currentTheme(){
+  const a = document.documentElement.getAttribute('data-theme');
+  if(a === 'dark' || a === 'light') return a;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
 }
+function applyThemeIcon(){
+  const t = currentTheme();
+  document.querySelectorAll('[data-theme-ico]').forEach(el => el.textContent = t === 'dark' ? '☀️' : '🌙');
+}
+function toggleTheme(){
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('map-theme', next); }catch(e){}
+  applyThemeIcon();
+}
+applyThemeIcon();
 hydrate();
 </script>
 </body>

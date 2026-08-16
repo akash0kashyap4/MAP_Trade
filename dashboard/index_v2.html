@@ -219,6 +219,10 @@ main{max-width:1400px;margin:0 auto;padding:20px 24px 60px;display:flex;flex-dir
 
 .loading{color:var(--mute);font-family:var(--mono);font-size:11px;letter-spacing:.06em}
 </style>
+<script>
+/* Apply saved theme before first paint (no flash). Unset = follow system. */
+(function(){try{var t=localStorage.getItem('map-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 </head>
 <body>
 
@@ -236,7 +240,7 @@ main{max-width:1400px;margin:0 auto;padding:20px 24px 60px;display:flex;flex-dir
     <a href="/dashboard/v2">← Hub</a>
   </nav>
   <div class="tools">
-    <button class="icon-btn" title="Toggle theme" id="themeBtn">◐</button>
+    <button class="icon-btn" title="Toggle light / dark" id="themeBtn" data-theme-ico>🌙</button>
     <button class="icon-btn" title="Settings" onclick="location.href='#settings'">⚙</button>
     <div class="equity-chip"><span>EQUITY</span><strong id="topEquity">₹—</strong></div>
     <div class="avatar" id="userInitial">AK</div>
@@ -460,10 +464,22 @@ async function api(path){
 }
 
 /* ── Theme toggle ──────────────────────────────────────── */
+function currentTheme(){
+  const a = document.documentElement.getAttribute('data-theme');
+  if(a === 'dark' || a === 'light') return a;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+}
+function applyThemeIcon(){
+  const t = currentTheme();
+  document.querySelectorAll('[data-theme-ico]').forEach(el => el.textContent = t === 'dark' ? '☀️' : '🌙');
+}
 $('#themeBtn').onclick = () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('map-theme', next); }catch(e){}
+  applyThemeIcon();
 };
+applyThemeIcon();
 
 /* ── State ─────────────────────────────────────────────── */
 let selectedInstr = 'NIFTY';
