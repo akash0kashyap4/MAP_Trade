@@ -2590,6 +2590,29 @@ function toggleSidebar() {
 }
 
 // ════════════════════════════════════════════════════
+//  STRATEGY DROPDOWN — populated from backend (single source of truth)
+// ════════════════════════════════════════════════════
+async function loadStrategyOptions() {
+  var sel = document.getElementById('bt-strategy');
+  if (!sel) return;
+  try {
+    var strategies = await (await fetch('/api/backtest/strategies')).json();
+    if (!strategies || typeof strategies !== 'object' || !Object.keys(strategies).length) return;
+    var current = sel.value;
+    var html = Object.keys(strategies).map(function(k){
+      return '<option value="' + esc(k) + '">' + esc(strategies[k]) + '</option>';
+    }).join('');
+    html += '<option value="custom">➕ Custom Strategy (upload)</option>';
+    sel.innerHTML = html;
+    // Restore the prior selection if it still exists after refresh.
+    if (current && sel.querySelector('option[value="' + current + '"]')) sel.value = current;
+  } catch (e) {
+    // Network/parse failure — keep the static fallback options already in the HTML.
+    console.warn('[strategies]', e);
+  }
+}
+
+// ════════════════════════════════════════════════════
 //  CUSTOM STRATEGY
 // ════════════════════════════════════════════════════
 function onStrategyChange() {
@@ -2688,6 +2711,7 @@ setNav('Dashboard');
 setTab('log');
 loadRiskConfig();
 loadTradingMode();
+loadStrategyOptions();
 </script>
 </body>
 </html>
