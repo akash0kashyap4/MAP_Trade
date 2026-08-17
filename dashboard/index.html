@@ -1205,6 +1205,10 @@ function setNav(label) {
   if (st)   st.style.display   = label === 'Settings' ? 'block' : 'none';
   if (rp)   rp.style.display   = label === 'Reports' ? 'block' : 'none';
 
+  // The canvas bitmap is sized from the live layout, so it must be redrawn once
+  // the chart section becomes visible again after being hidden.
+  if (mkt && mkt.style.display !== 'none') drawChart();
+
   // Bottom tab
   if (label === 'Trades') setTab('history');
   if (label === 'Settings') loadRiskConfig();
@@ -1528,6 +1532,9 @@ function drawChart() {
   var cv = document.getElementById('chart-canvas');
   if (!cv||!currentCandles.length) return;
   var r=cv.getBoundingClientRect();
+  // Section is hidden (nav switched away) so the box measures 0 — bail out before
+  // touching cv.width, otherwise the bitmap is wiped and returns blank.
+  if (r.width < 1 || r.height < 1) return;
   var dpr=window.devicePixelRatio||1;
   cv.width=r.width*dpr; cv.height=r.height*dpr;
   var ctx=cv.getContext('2d');
@@ -2720,6 +2727,16 @@ async function saveStrategy() {
 //  CHART AUTO-REFRESH fallback (every 60s if SSE stalls)
 // ════════════════════════════════════════════════════
 setInterval(function(){ if(currentCandles && currentCandles.length) drawChart(); }, 60000);
+
+// The canvas bitmap is sized from its CSS box, so a window resize leaves the
+// chart stretched until the next redraw — repaint it (debounced) on resize.
+var _chartResizeTimer = null;
+window.addEventListener('resize', function() {
+  clearTimeout(_chartResizeTimer);
+  _chartResizeTimer = setTimeout(function() {
+    if (currentCandles && currentCandles.length) drawChart();
+  }, 150);
+});
 
 // ════════════════════════════════════════════════════
 //  INIT
