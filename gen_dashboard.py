@@ -1,6 +1,6 @@
 
 # Run this to regenerate index.html
-out = r"c:\Users\akash\Downloads\ragi-trading-bot-master (1)\ragi-trading-bot-master\dashboard\index.html"
+out = r"c:\Users\akash\Downloads\map-trade-master (1)\map-trade-master\dashboard\index.html"
 print("Reading existing file...")
 with open(out, encoding="utf-8") as f:
     content = f.read()

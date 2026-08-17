@@ -19,9 +19,9 @@ import hashlib
 from fastapi import HTTPException, Request
 from data.database import save_session, delete_session, get_session
 
-COOKIE_NAME = "ragi_session"
+COOKIE_NAME = "map_trade_session"
 SESSION_TTL = int(os.getenv("SESSION_TTL_SECONDS", 86400 * 7))  # 7 days default
-SESSION_SECRET = os.getenv("SESSION_SECRET", "ragi_session_fallback_secret_key_12345")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "map_trade_session_fallback_secret_key_12345")
 
 
 DEFAULT_PASSWORD = "ChangeMe123!"

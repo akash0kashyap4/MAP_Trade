@@ -26,8 +26,8 @@ from ai.stack import add_indicators, fetch_ohlcv, render_mplfinance, render_plot
 from backtest.quick import compare_strategies
 
 IST = pytz.timezone("Asia/Kolkata")
-REPORT_DIR = Path(os.getenv("RAGI_REPORT_DIR", "data/reports"))
-CHART_DIR = Path(os.getenv("RAGI_CHART_DIR", "data/charts"))
+REPORT_DIR = Path(os.getenv("MAP_TRADE_REPORT_DIR", "data/reports"))
+CHART_DIR = Path(os.getenv("MAP_TRADE_CHART_DIR", "data/charts"))
 
 
 SYNTHESIS_SYSTEM = """You are MAP Trade Analyst — a disciplined Indian markets desk.

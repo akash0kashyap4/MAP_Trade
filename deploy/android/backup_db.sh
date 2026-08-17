@@ -1,13 +1,13 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================
-# RAGI BOT — DATABASE BACKUP (Android/Termux)
+# MAP TRADE — DATABASE BACKUP (Android/Termux)
 # ============================================
 # Creates a timestamped backup of the SQLite database.
 # Safe to run while the bot is running (uses SQLite .backup command).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RAGI_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-DATA_DIR="${DATA_DIR:-$RAGI_DIR/data_store}"
+MAP_TRADE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DATA_DIR="${DATA_DIR:-$MAP_TRADE_DIR/data_store}"
 DB_FILE="${DB_PATH:-$DATA_DIR/trading_bot.db}"
 BACKUP_DIR="$DATA_DIR/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

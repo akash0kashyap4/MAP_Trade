@@ -47,7 +47,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("ragi.main")
+log = logging.getLogger("map_trade.main")
 
 
 # ─── Auth config ────────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ async def security_headers(request: Request, call_next):
 @app.get("/health")
 async def health():
     """Health check for load balancers and uptime monitors."""
-    return {"status": "ok", "service": "ragi-bot"}
+    return {"status": "ok", "service": "map-trade"}
 
 
 @app.get("/health/detailed")

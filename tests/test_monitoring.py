@@ -42,7 +42,7 @@ def test_health_endpoint():
     assert r.status_code == 200
     data = r.json()
     assert data["status"] == "ok"
-    assert data["service"] == "ragi-bot"
+    assert data["service"] == "map-trade"
 
 
 def test_health_detailed_endpoint():

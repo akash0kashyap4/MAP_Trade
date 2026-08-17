@@ -1172,7 +1172,7 @@ async def news_scan_now(request: Request):
                   f"analysis step failed (AI_PROVIDER={provider} — check the active "
                   "provider's credentials/CLI login, model error, rate limit, or invalid "
                   "response). Raw headlines are shown below; check "
-                  "`journalctl -u ragi | grep agent` or `logs/runtime.log`, then try "
+                  "`journalctl -u map-trade | grep agent` or `logs/runtime.log`, then try "
                   "SCAN NEWS NOW again.")
         return {"ok": False, "reason": "analysis_failed", "error": detail,
                 "headline_count": news_brain.last_headline_count}

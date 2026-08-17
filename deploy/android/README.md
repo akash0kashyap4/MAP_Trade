@@ -1,4 +1,4 @@
-# Ragi Bot — Android/Termux Deployment Guide
+# MAP Trade — Android/Termux Deployment Guide
 
 ## Target Device
 
@@ -20,8 +20,8 @@ Motorola Moto G51 5G (or any Android device with Termux)
 ```bash
 # 1. Clone the repository
 pkg install git
-git clone https://github.com/akash0kashyap4/ragi_bot.git ~/Ragi_bot
-cd ~/Ragi_bot
+git clone https://github.com/akash0kashyap4/MAP_Trade.git ~/MAP_Trade
+cd ~/MAP_Trade
 
 # 2. Run the installer
 bash deploy/android/install_android.sh
@@ -31,20 +31,20 @@ nano .env
 # Set: BOT_USERNAME, BOT_PASSWORD, SESSION_SECRET, API keys
 
 # 4. Start the bot
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 ```
 
 ## Management Commands
 
 | Action | Command |
 |--------|---------|
-| Start bot | `bash deploy/android/start_ragi.sh` |
-| Stop bot | `bash deploy/android/stop_ragi.sh` |
-| Restart bot | `bash deploy/android/restart_ragi.sh` |
-| Check status | `bash deploy/android/status_ragi.sh` |
+| Start bot | `bash deploy/android/start_map_trade.sh` |
+| Stop bot | `bash deploy/android/stop_map_trade.sh` |
+| Restart bot | `bash deploy/android/restart_map_trade.sh` |
+| Check status | `bash deploy/android/status_map_trade.sh` |
 | Enable watchdog | `bash deploy/android/watchdog.sh &` |
 | Backup database | `bash deploy/android/backup_db.sh` |
-| View logs | `tail -f logs/ragi.log` |
+| View logs | `tail -f logs/map_trade.log` |
 | Check health (HTTP) | `curl localhost:8000/health/detailed` |
 
 ## Watchdog (Auto-Restart)
@@ -64,7 +64,7 @@ Safety limits:
 
 ```bash
 # Stop the bot first
-bash deploy/android/stop_ragi.sh
+bash deploy/android/stop_map_trade.sh
 
 # List available backups
 ls -la data_store/backups/
@@ -73,7 +73,7 @@ ls -la data_store/backups/
 cp data_store/backups/trading_bot_20260814_120000.db data_store/trading_bot.db
 
 # Restart
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 ```
 
 ## Local AI (Ollama) Setup
@@ -136,7 +136,7 @@ The LLM is used for market analysis, news classification, and signal explanation
 ### Bot won't start
 ```bash
 # Check logs
-tail -20 logs/ragi.log
+tail -20 logs/map_trade.log
 
 # Check if port is in use
 ss -tlnp | grep 8000
@@ -148,7 +148,7 @@ cat .env | grep -v "^#" | grep -v "^$"
 ### Database locked errors
 ```bash
 # Stop the bot
-bash deploy/android/stop_ragi.sh
+bash deploy/android/stop_map_trade.sh
 
 # Check for stale lock files
 ls -la data_store/trading_bot.db*
@@ -157,13 +157,13 @@ ls -la data_store/trading_bot.db*
 rm -f data_store/trading_bot.db-wal data_store/trading_bot.db-shm
 
 # Restart
-bash deploy/android/start_ragi.sh
+bash deploy/android/start_map_trade.sh
 ```
 
 ### High memory usage
 ```bash
 # Check bot memory
-bash deploy/android/status_ragi.sh
+bash deploy/android/status_map_trade.sh
 
 # If using Ollama, consider a smaller model
 # Edit .env: OLLAMA_MODEL=qwen2:1.5b

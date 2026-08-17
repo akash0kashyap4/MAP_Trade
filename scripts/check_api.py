@@ -5,7 +5,7 @@ Copilot CLI, Ollama, or a fallback chain of these).
 Run on the server to confirm the configured provider + key actually work, using
 the bot's exact code path:
 
-    /root/Ragi_bot/venv/bin/python scripts/check_api.py
+    /root/MAP_Trade/venv/bin/python scripts/check_api.py
 
 It makes one tiny request through the same dispatcher the bot uses and prints a
 clear PASS/FAIL. Set AI_PROVIDER in .env to choose the provider (see .env.example).
