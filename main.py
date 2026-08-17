@@ -1,5 +1,5 @@
 """
-RAGI -- Self-Learning Options Trading Bot
+MAP Trade -- Self-Learning Options Trading Bot
 Nifty / BankNifty / Sensex | Upstox API | Claude Code Brain
 """
 from __future__ import annotations
@@ -153,7 +153,7 @@ class _DBProxy:
 
 
 app = FastAPI(
-    title="Ragi Trading Bot",
+    title="MAP Trade",
     lifespan=lifespan,
     # In production the interactive docs and raw schema are disabled so the
     # private API surface (incl. trading-control endpoints) is not published.
@@ -399,7 +399,7 @@ def _print_startup_banner(host: str, port: int) -> None:
     lan_ip = _get_lan_ip()
     print()
     print("=" * 56)
-    print("  RAGI BOT — Self-Learning Options Trading Bot")
+    print("  MAP TRADE — Self-Learning Options Trading Bot")
     print("=" * 56)
     print(f"  Server:    {host}:{port}")
     print(f"  Dashboard: http://{lan_ip}:{port}")

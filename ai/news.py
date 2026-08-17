@@ -1,5 +1,5 @@
 """
-Ragi News Brain — fetches Indian market news from free RSS feeds (no API key),
+MAP Trade News Brain — fetches Indian market news from free RSS feeds (no API key),
 asks Claude to convert headlines into a trading-relevant "market pulse", stores
 both, and feeds the pulse into premarket + intraday decision prompts.
 
@@ -76,7 +76,7 @@ async def fetch_headlines(max_per_feed: int = 10, timeout_s: int = 12) -> list[d
             print(f"[news] feed error {source}: {e}")
             return []
 
-    headers = {"User-Agent": "Mozilla/5.0 (RagiBot news reader)"}
+    headers = {"User-Agent": "Mozilla/5.0 (MAPTradeBot news reader)"}
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
             results = await asyncio.gather(*(_one(session, s, u) for s, u in RSS_FEEDS))
@@ -149,7 +149,7 @@ class NewsBrain:
         if notify_fn:
             try:
                 await notify_fn(
-                    f"📰 Ragi News Pulse [{store.news_insight['updated']}]\n"
+                    f"📰 MAP Trade News Pulse [{store.news_insight['updated']}]\n"
                     f"Sentiment: {store.news_insight['sentiment']} "
                     f"({store.news_insight['score']:+d})\n"
                     f"{store.news_insight['summary']}"

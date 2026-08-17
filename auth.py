@@ -1,5 +1,5 @@
 """
-Central authentication for the Ragi trading terminal.
+Central authentication for the MAP Trade trading terminal.
 
 Lives in its own module (not main.py) so routers can depend on it without the
 circular import that previously forced `from main import require_auth` to be

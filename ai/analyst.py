@@ -1,4 +1,4 @@
-"""Ragi Analyst — the best-quality one-shot analysis.
+"""MAP Trade Analyst — the best-quality one-shot analysis.
 
 Combines every capability into a single markdown-formatted verdict:
     fetch (yfinance)
@@ -30,7 +30,7 @@ REPORT_DIR = Path(os.getenv("RAGI_REPORT_DIR", "data/reports"))
 CHART_DIR = Path(os.getenv("RAGI_CHART_DIR", "data/charts"))
 
 
-SYNTHESIS_SYSTEM = """You are Ragi Analyst — a disciplined Indian markets desk.
+SYNTHESIS_SYSTEM = """You are MAP Trade Analyst — a disciplined Indian markets desk.
 
 Given a data bundle (price snapshot, indicators, news sentiment, backtest of
 3 mechanical strategies on the same symbol), produce a crisp markdown report
@@ -90,7 +90,7 @@ def _format_report(symbol: str, bundle: dict, synthesis: str) -> str:
         )
 
     lines = [
-        f"# Ragi Analyst — {symbol}",
+        f"# MAP Trade Analyst — {symbol}",
         f"_As of {stamp}_",
         "",
         "## Snapshot",

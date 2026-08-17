@@ -1,5 +1,5 @@
 """
-Ragi Daily Reporter — the bot's end-of-day journal.
+MAP Trade Daily Reporter — the bot's end-of-day journal.
 
 Every trading day (15:45 IST) it assembles everything that happened — premarket
 plan, news pulse, actual market moves, every trade with its entry reasoning —
@@ -146,7 +146,7 @@ class DailyReporter:
             try:
                 grade = (ai_json or {}).get("self_grade", "—")
                 await notify_fn(
-                    f"📋 Ragi Daily Report [{date}]\n"
+                    f"📋 MAP Trade Daily Report [{date}]\n"
                     f"Trades: {stats['n_trades']} | WR: {stats['win_rate']:.0f}% | "
                     f"P&L: ₹{stats['realized_pnl']:,.0f}\n"
                     f"Grade: {grade}"
