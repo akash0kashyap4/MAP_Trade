@@ -109,5 +109,5 @@ class TestSameOriginCheck:
             _check_same_origin(req)
 
     def test_production_host_same_origin_passes(self):
-        req = _make_mock_request(origin="https://ragi.example.com", host="ragi.example.com")
+        req = _make_mock_request(origin="https://maptrade.example.com", host="maptrade.example.com")
         _check_same_origin(req)

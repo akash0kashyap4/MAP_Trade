@@ -1,4 +1,4 @@
-"""Ragi Analyst — the best-quality one-shot analysis.
+"""MAP Trade Analyst — the best-quality one-shot analysis.
 
 Combines every capability into a single markdown-formatted verdict:
     fetch (yfinance)
@@ -26,11 +26,11 @@ from ai.stack import add_indicators, fetch_ohlcv, render_mplfinance, render_plot
 from backtest.quick import compare_strategies
 
 IST = pytz.timezone("Asia/Kolkata")
-REPORT_DIR = Path(os.getenv("RAGI_REPORT_DIR", "data/reports"))
-CHART_DIR = Path(os.getenv("RAGI_CHART_DIR", "data/charts"))
+REPORT_DIR = Path(os.getenv("MAP_TRADE_REPORT_DIR", "data/reports"))
+CHART_DIR = Path(os.getenv("MAP_TRADE_CHART_DIR", "data/charts"))
 
 
-SYNTHESIS_SYSTEM = """You are Ragi Analyst — a disciplined Indian markets desk.
+SYNTHESIS_SYSTEM = """You are MAP Trade Analyst — a disciplined Indian markets desk.
 
 Given a data bundle (price snapshot, indicators, news sentiment, backtest of
 3 mechanical strategies on the same symbol), produce a crisp markdown report
@@ -90,7 +90,7 @@ def _format_report(symbol: str, bundle: dict, synthesis: str) -> str:
         )
 
     lines = [
-        f"# Ragi Analyst — {symbol}",
+        f"# MAP Trade Analyst — {symbol}",
         f"_As of {stamp}_",
         "",
         "## Snapshot",

@@ -7,14 +7,19 @@ _groww_client: GrowwAPI | None = None
 
 def get_groww_client() -> GrowwAPI:
     """
-    Returns a cached GrowwAPI client.
+    Returns a cached GrowwAPI client authenticated with a real access token.
 
-    Strategy:
-    1. If GROWW_API_KEY looks like a JWT (starts with 'eyJ'), use it directly
-       as the access_token — no need to call get_access_token() at all.
-    2. Otherwise, call get_access_token() once and cache the result.
+    A Groww API key is itself a JWT, so "starts with eyJ" says nothing about
+    whether it is an access token — the long-lived API key and the short-lived
+    access token both look identical at a glance. Data endpoints only accept the
+    access token: handing them the raw API key is accepted as a *valid*
+    credential but refused as unauthorised, which surfaces as HTTP 403
+    (GrowwAPIAuthorisationException, "token does not have the required
+    permissions") rather than the 401 you would get from an expired token.
 
-    This avoids hammering the token endpoint and hitting rate limits.
+    So whenever a secret is configured we always exchange the API key for an
+    access token. Only when no secret exists do we assume the value really is a
+    ready-made access token.
     """
     global _groww_client
 
@@ -24,20 +29,19 @@ def get_groww_client() -> GrowwAPI:
     if not GROWW_API_KEY:
         raise ValueError("GROWW_API_KEY not set in .env")
 
-    # If the key is already a JWT access token, use it directly
-    if GROWW_API_KEY.startswith("eyJ"):
-        print("[groww.auth] Using GROWW_API_KEY as direct access token (JWT detected)")
-        _groww_client = GrowwAPI(GROWW_API_KEY)
-    else:
-        # It's an API key — exchange for access token (called only once)
-        if not GROWW_SECRET_KEY:
-            raise ValueError("GROWW_SECRET_KEY not set in .env")
-        print("[groww.auth] Exchanging API key for access token...")
+    if GROWW_SECRET_KEY:
+        print("[groww.auth] Exchanging API key + secret for an access token...")
         access_token = GrowwAPI.get_access_token(
             api_key=GROWW_API_KEY,
             secret=GROWW_SECRET_KEY,
         )
         _groww_client = GrowwAPI(access_token)
+    else:
+        # No secret to exchange with — treat the value as an access token and
+        # let Groww be the judge. A 403 here means it was an API key after all.
+        print("[groww.auth] No GROWW_SECRET_KEY set — using GROWW_API_KEY as a "
+              "direct access token")
+        _groww_client = GrowwAPI(GROWW_API_KEY)
 
     print("[groww.auth] Groww client ready")
     return _groww_client

@@ -1,6 +1,6 @@
 # AI Brain Build Plan — Best & Free Stack
 
-Goal: Ragi_bot ke liye ek AI "brain" build karna jo trading decisions, research, sentiment aur backtesting kar sake — bina paid subscription ke, sirf free / open-source tools se.
+Goal: MAP_Trade ke liye ek AI "brain" build karna jo trading decisions, research, sentiment aur backtesting kar sake — bina paid subscription ke, sirf free / open-source tools se.
 
 Repo me pehle se `ai/agent.py` Claude Code CLI (`claude -p`) use karta hai — is plan ka base wahi hai.
 

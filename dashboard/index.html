@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>RAGI — Trading Terminal</title>
-<meta name="description" content="RAGI AI Trading Bot — Real-time options trading dashboard with live signals, P&L and backtesting.">
+<title>MAP Trade — Trading Terminal</title>
+<meta name="description" content="MAP Trade AI Trading Bot — Real-time options trading dashboard with live signals, P&L and backtesting.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -26,6 +26,9 @@ html,body{height:100%;overflow:hidden;background:#09090B;font-family:'Inter',sys
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:4px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+
+/* ── Keyboard focus indicator (visible only for keyboard/Tab users) ── */
+a:focus-visible,button:focus-visible,[data-nav]:focus-visible,[data-btab]:focus-visible,.tf-btn:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid rgba(99,102,241,.75);outline-offset:2px}
 
 /* ── Sidebar nav buttons ── */
 [data-nav]{transition:background .15s,color .15s;border:none;cursor:pointer;font-family:inherit;background:transparent;padding:0}
@@ -168,6 +171,12 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.4)}
   #hamburger{display:flex!important}
   .right-panel{display:none!important}
   #main-content{min-width:0;overflow-x:hidden}
+  /* Right panel is hidden on mobile — collapse the reserved 300px column so
+     the main content uses the full width instead of being squeezed to a sliver. */
+  #content-row{grid-template-columns:1fr!important}
+  #hero-section{grid-template-columns:1fr!important}
+  #ind-grid{grid-template-columns:repeat(3,1fr)!important}
+  #settings-actions{grid-template-columns:1fr 1fr!important}
 }
 @media(max-width:900px){
   .right-panel{width:220px!important}
@@ -337,7 +346,7 @@ button.hdr-badge {
     <!-- Connection -->
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:48px;border-top:1px solid rgba(255,255,255,.06);gap:4px">
       <div id="conn-status" style="width:7px;height:7px;border-radius:50%;background:#EF4444;transition:background .4s"></div>
-      <span style="font-size:7px;font-weight:700;color:#27272A;letter-spacing:.5px">RAGI</span>
+      <span style="font-size:7px;font-weight:700;color:#27272A;letter-spacing:.5px">MAP TRADE</span>
     </div>
   </div>
 
@@ -347,7 +356,7 @@ button.hdr-badge {
     <!-- TOP BAR -->
     <div style="display:flex;align-items:center;height:56px;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(9,9,11,.95);gap:14px;flex-shrink:0;z-index:10">
       <!-- Hamburger (mobile only) -->
-      <button id="hamburger" onclick="openSidebar()" style="display:none;width:32px;height:32px;border:none;background:transparent;cursor:pointer;align-items:center;justify-content:center;border-radius:8px;color:#A1A1AA;padding:0">
+      <button id="hamburger" onclick="openSidebar()" aria-label="Open navigation menu" title="Menu" style="display:none;width:32px;height:32px;border:none;background:transparent;cursor:pointer;align-items:center;justify-content:center;border-radius:8px;color:#A1A1AA;padding:0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <span id="page-title" style="font-size:15px;font-weight:600">Dashboard</span>
@@ -385,11 +394,11 @@ button.hdr-badge {
       <button class="hdr-badge paper" id="mode-btn" onclick="requestModeSwitch()" title="Click to switch trading mode" aria-live="polite">● PAPER MODE</button>
 
       <!-- Logout -->
-      <button onclick="logout()" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0" title="Logout">R</button>
+      <button onclick="logout()" aria-label="Logout" style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366F1,#8B5CF6);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;flex-shrink:0" title="Logout">R</button>
     </div>
 
     <!-- CONTENT ROW -->
-    <div style="flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-height:0">
+    <div id="content-row" style="flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-height:0">
 
       <!-- MAIN LEFT -->
       <div id="main-left" style="overflow-y:auto;overflow-x:hidden;min-width:0">
@@ -403,7 +412,7 @@ button.hdr-badge {
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
                 <div>
                   <div style="font-size:9px;font-weight:700;color:#6366F1;letter-spacing:.6px;margin-bottom:2px">AI DECISION</div>
-                  <div style="font-size:13px;font-weight:600">RAGI Intelligence</div>
+                  <div style="font-size:13px;font-weight:600">MAP Trade Intelligence</div>
                 </div>
                 <div id="hero-action" style="padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;background:rgba(255,255,255,.05);color:#71717A;border:1px solid rgba(255,255,255,.08);transition:all .3s;white-space:nowrap">WAITING</div>
               </div>
@@ -575,7 +584,7 @@ button.hdr-badge {
 
           <!-- SECTION: Settings -->
           <div id="sec-settings" style="display:none">
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+            <div id="settings-actions" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
               <div class="card" style="border-radius:16px;padding:18px">
                 <div style="font-size:9px;font-weight:700;color:#52525B;letter-spacing:.6px;margin-bottom:5px">TRADING MODE</div>
                 <div style="font-size:11px;color:#71717A;margin-bottom:12px;line-height:1.5">Switch between Paper simulation and Live AngelOne trading.</div>
@@ -873,7 +882,7 @@ button.hdr-badge {
   <div style="background:#111318;border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:22px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:13px;font-weight:600" id="dl-title">Decision Log</div>
-      <button onclick="document.getElementById('dl-modal').style.display='none'" style="background:none;border:none;color:#71717A;cursor:pointer;font-size:18px;padding:0 4px;line-height:1">×</button>
+      <button onclick="document.getElementById('dl-modal').style.display='none'" aria-label="Close" title="Close" style="background:none;border:none;color:#71717A;cursor:pointer;font-size:18px;padding:0 4px;line-height:1">×</button>
     </div>
     <div id="dl-content"></div>
   </div>
@@ -923,19 +932,6 @@ button.hdr-badge {
     } catch (err) {
       throw err;
     }
-  };
-})();
-
-// ════════════════════════════════════════════════════
-//  401 INTERCEPTOR — must run first, before any fetch calls
-// ════════════════════════════════════════════════════
-(function(){
-  var _origFetch = window.fetch;
-  window.fetch = function() {
-    return _origFetch.apply(this, arguments).then(function(r) {
-      if (r.status === 401) { window.location.href = '/login'; }
-      return r;
-    });
   };
 })();
 
@@ -1029,12 +1025,16 @@ function requestModeSwitch(mode) {
       confirmInput.oninput = function() {
         confirmBtn.disabled = (confirmInput.value !== 'GO LIVE');
       };
+      confirmInput.onkeydown = function(ev) {
+        if (ev.key === 'Enter' && !confirmBtn.disabled) { ev.preventDefault(); confirmBtn.click(); }
+      };
 
       confirmBtn.onclick = function() {
         closeModeModal();
         _performModeSwitch('live', 'GO LIVE');
       };
       modal.style.display = 'flex';
+      setTimeout(function(){ confirmInput.focus(); }, 50);
     }
   } else {
     var inputContainer = document.getElementById('mode-confirm-input-container');
@@ -1204,6 +1204,10 @@ function setNav(label) {
   if (bt)   bt.style.display   = label === 'Backtest' ? 'block' : 'none';
   if (st)   st.style.display   = label === 'Settings' ? 'block' : 'none';
   if (rp)   rp.style.display   = label === 'Reports' ? 'block' : 'none';
+
+  // The canvas bitmap is sized from the live layout, so it must be redrawn once
+  // the chart section becomes visible again after being hidden.
+  if (mkt && mkt.style.display !== 'none') drawChart();
 
   // Bottom tab
   if (label === 'Trades') setTab('history');
@@ -1528,6 +1532,9 @@ function drawChart() {
   var cv = document.getElementById('chart-canvas');
   if (!cv||!currentCandles.length) return;
   var r=cv.getBoundingClientRect();
+  // Section is hidden (nav switched away) so the box measures 0 — bail out before
+  // touching cv.width, otherwise the bitmap is wiped and returns blank.
+  if (r.width < 1 || r.height < 1) return;
   var dpr=window.devicePixelRatio||1;
   cv.width=r.width*dpr; cv.height=r.height*dpr;
   var ctx=cv.getContext('2d');
@@ -1869,12 +1876,16 @@ function confirmSquareOff() {
     confirmInput.oninput = function() {
       confirmBtn.disabled = (confirmInput.value !== 'SQUARE-OFF');
     };
+    confirmInput.onkeydown = function(ev) {
+      if (ev.key === 'Enter' && !confirmBtn.disabled) { ev.preventDefault(); confirmBtn.click(); }
+    };
 
     confirmBtn.onclick = function() {
       closeSquareOffModal();
       _performSquareOff('SQUARE-OFF');
     };
     modal.style.display = 'flex';
+    setTimeout(function(){ confirmInput.focus(); }, 50);
   }
 }
 
@@ -2032,6 +2043,11 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
+}
+// Only allow http(s) links from external feeds — blocks javascript:/data: URLs.
+function safeUrl(u) {
+  u = String(u ?? '').trim();
+  return /^https?:\/\//i.test(u) ? u : '';
 }
 
 function pnlColor(v) {
@@ -2283,10 +2299,11 @@ async function loadNewsPulse() {
     itEl.innerHTML = items.length ? `<div class="rpt-card">
       <div class="rpt-h" style="margin-top:0">RAW HEADLINES <span class="news-count">${items.length}</span></div>
       ${items.map(function(n) {
+        var url = safeUrl(n.url);
         return `<div class="news-headline">
           <span class="news-src">${esc(n.source || '—')}</span>
-          <span class="rpt-text">${n.url
-            ? `<a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer" class="news-link">${esc(n.headline)}</a>`
+          <span class="rpt-text">${url
+            ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="news-link">${esc(n.headline)}</a>`
             : esc(n.headline)}</span>
         </div>`;
       }).join('')}
@@ -2597,6 +2614,29 @@ function toggleSidebar() {
 }
 
 // ════════════════════════════════════════════════════
+//  STRATEGY DROPDOWN — populated from backend (single source of truth)
+// ════════════════════════════════════════════════════
+async function loadStrategyOptions() {
+  var sel = document.getElementById('bt-strategy');
+  if (!sel) return;
+  try {
+    var strategies = await (await fetch('/api/backtest/strategies')).json();
+    if (!strategies || typeof strategies !== 'object' || !Object.keys(strategies).length) return;
+    var current = sel.value;
+    var html = Object.keys(strategies).map(function(k){
+      return '<option value="' + esc(k) + '">' + esc(strategies[k]) + '</option>';
+    }).join('');
+    html += '<option value="custom">➕ Custom Strategy (upload)</option>';
+    sel.innerHTML = html;
+    // Restore the prior selection if it still exists after refresh.
+    if (current && sel.querySelector('option[value="' + current + '"]')) sel.value = current;
+  } catch (e) {
+    // Network/parse failure — keep the static fallback options already in the HTML.
+    console.warn('[strategies]', e);
+  }
+}
+
+// ════════════════════════════════════════════════════
 //  CUSTOM STRATEGY
 // ════════════════════════════════════════════════════
 function onStrategyChange() {
@@ -2688,13 +2728,41 @@ async function saveStrategy() {
 // ════════════════════════════════════════════════════
 setInterval(function(){ if(currentCandles && currentCandles.length) drawChart(); }, 60000);
 
+// The canvas bitmap is sized from its CSS box, so a window resize leaves the
+// chart stretched until the next redraw — repaint it (debounced) on resize.
+var _chartResizeTimer = null;
+window.addEventListener('resize', function() {
+  clearTimeout(_chartResizeTimer);
+  _chartResizeTimer = setTimeout(function() {
+    if (currentCandles && currentCandles.length) drawChart();
+  }, 150);
+});
+
 // ════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════
+// Modal dismissal: click the backdrop to cancel, or press Escape to close
+// any open modal — expected behavior for role="alertdialog" dialogs.
+(function(){
+  var MODALS = ['dl-modal','mode-modal','squareoff-modal'];
+  ['mode-modal','squareoff-modal'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', function(ev){ if (ev.target === el) el.style.display = 'none'; });
+  });
+  document.addEventListener('keydown', function(ev){
+    if (ev.key !== 'Escape') return;
+    MODALS.forEach(function(id){
+      var el = document.getElementById(id);
+      if (el && el.style.display !== 'none' && el.style.display !== '') el.style.display = 'none';
+    });
+  });
+})();
+
 setNav('Dashboard');
 setTab('log');
 loadRiskConfig();
 loadTradingMode();
+loadStrategyOptions();
 </script>
 </body>
 </html>

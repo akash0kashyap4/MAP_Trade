@@ -1,17 +1,17 @@
 [Unit]
-Description=Ragi Trading Bot (Gunicorn/Uvicorn)
+Description=MAP Trade Trading Bot (Gunicorn/Uvicorn)
 After=network.target
 
 [Service]
 User=root
 Group=www-data
-WorkingDirectory=/root/Ragi_bot
-Environment="PATH=/root/Ragi_bot/venv/bin"
+WorkingDirectory=/root/MAP_Trade
+Environment="PATH=/root/MAP_Trade/venv/bin"
 Environment="ENV=production"
 # --proxy-headers + trusted proxy so request.client.host is the real client IP
 # (from X-Forwarded-For set by nginx), not 127.0.0.1 — required for per-IP login
 # rate limiting to work. --forwarded-allow-ips must list only the nginx host.
-ExecStart=/root/Ragi_bot/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 \
+ExecStart=/root/MAP_Trade/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 \
           --proxy-headers --forwarded-allow-ips 127.0.0.1
 
 # Auto-restart on crash

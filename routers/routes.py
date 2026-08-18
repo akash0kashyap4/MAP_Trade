@@ -193,9 +193,9 @@ async def groww_health():
     """Ping Groww API and return connection status."""
     result = check_api_connection()
     if result["ok"]:
-        send_telegram("[Ragi] Groww API health check OK.")
+        send_telegram("[MAP Trade] Groww API health check OK.")
     else:
-        send_telegram(f"[Ragi] Groww API health check FAILED: {result['message']}")
+        send_telegram(f"[MAP Trade] Groww API health check FAILED: {result['message']}")
     return result
 
 _backtest_status = {"running": False, "progress": 0, "result": None, "error": None}
@@ -970,7 +970,7 @@ async def override_state(req: OverrideStateRequest, request: Request):
     msg = "[Override] State change: " + ", ".join(f"{k}={v}" for k, v in changed.items())
     print(msg)
     try:
-        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[Ragi] {msg}")
+        await asyncio.get_running_loop().run_in_executor(None, send_telegram, f"[MAP Trade] {msg}")
     except Exception:
         pass
 
@@ -1172,7 +1172,7 @@ async def news_scan_now(request: Request):
                   f"analysis step failed (AI_PROVIDER={provider} — check the active "
                   "provider's credentials/CLI login, model error, rate limit, or invalid "
                   "response). Raw headlines are shown below; check "
-                  "`journalctl -u ragi | grep agent` or `logs/runtime.log`, then try "
+                  "`journalctl -u map-trade | grep agent` or `logs/runtime.log`, then try "
                   "SCAN NEWS NOW again.")
         return {"ok": False, "reason": "analysis_failed", "error": detail,
                 "headline_count": news_brain.last_headline_count}
@@ -1306,7 +1306,7 @@ async def nse_bhavcopy_status(symbol: str = "NIFTY"):
 
 @router.get("/analyst/{symbol}")
 async def analyst(symbol: str, period: str = "1y", interval: str = "1d", llm: bool = False):
-    """Ragi Analyst — one-shot best-quality analysis for a symbol.
+    """MAP Trade Analyst — one-shot best-quality analysis for a symbol.
 
     Returns markdown report + chart paths. Set llm=true to include Claude synthesis.
     """

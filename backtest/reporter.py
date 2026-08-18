@@ -6,7 +6,7 @@ from colorama import Fore, Style
 def print_backtest_report(result) -> None:
     sep = "=" * 70
     print(f"\n{Fore.CYAN}{sep}")
-    print(f"  RAGI BACKTEST REPORT  --  {result.instrument}  {result.start_date} -> {result.end_date}")
+    print(f"  MAP TRADE BACKTEST REPORT  --  {result.instrument}  {result.start_date} -> {result.end_date}")
     print(f"{sep}{Style.RESET_ALL}")
 
     def _row(label, value, color=Fore.WHITE):

@@ -65,7 +65,7 @@ def get_logger() -> logging.Logger:
     global _logger
     if _logger is not None:
         return _logger
-    log = logging.getLogger("ragi.runtime")
+    log = logging.getLogger("map_trade.runtime")
     log.setLevel(getattr(logging, RUNTIME.log_level, logging.INFO))
     log.propagate = False
     if not log.handlers:
